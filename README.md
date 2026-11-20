@@ -90,7 +90,7 @@ Menu buyer/admin, detail order, konfirmasi, pembayaran, dan CLAIM memakai frame 
 
 Semua pilihan memakai **1, 2, 3, ... sesuai urutan layar**, termasuk Kembali, Beranda, dan pindah halaman. Tidak ada nomor navigasi khusus 0, 00, 6/7, atau 8/9. Saat mengisi nama, harga, alasan, atau kuantitas, gunakan `/kembali`; angka adalah data, bukan navigasi. `/admin` membuka beranda admin dan `/menu` membuka katalog buyer (atau beranda jika pengirim adalah admin).
 
-Jumlah varian nonarsip ditampilkan di samping kategori, misalnya `CHATGPT API KEY (0)`. Varian tutup tetap termasuk hitungan tersebut; status Buka/Tutup ditampilkan pada varian masing-masing. Kategori kosong menampilkan pilihan berurutan: Tambah varian, Lihat arsip, Kembali, Beranda.
+Jumlah varian nonarsip hanya ditampilkan pada menu admin di samping kategori, misalnya `CHATGPT API KEY (0)`. Varian tutup tetap termasuk hitungan tersebut; status Buka/Tutup ditampilkan pada varian masing-masing. Katalog dan judul kategori buyer tidak menampilkan hitungan `(n)`; buyer melihat harga varian Buka atau Belum tersedia. Kategori kosong pada admin menampilkan pilihan berurutan: Tambah varian, Lihat arsip, Kembali, Beranda.
 
 ### Buyer dan CLAIM
 
@@ -125,6 +125,8 @@ Ketik **`/admin` atau `/menu`** dari nomor `ADMIN_NUMBER`:
 3. **Status bot & pengiriman**: koneksi WA/D1, antrean, dan pengiriman meragukan yang dapat dikirim ulang setelah pemeriksaan.
 
 Nomor pilihan mengikuti layar. Maksimal lima item data per halaman; menu tetap menampilkan tindakan serta navigasi setelah daftar. Pilihan dan draft kedaluwarsa setelah 30 menit. Tindakan kritis menampilkan konfirmasi, sedangkan penolakan bukti, pembatalan admin, dan awal refund meminta alasan. Data yang berubah sejak menu ditampilkan harus diperiksa ulang.
+
+Jika terjadi error, `ADMIN_INTERNAL` berarti kegagalan kode menu, `API_NETWORK` berarti koneksi/timeout Worker, `API_RESPONSE` berarti respons tidak sesuai (misalnya URL salah), dan `API_HTTP` menampilkan status penolakan/gangguan Worker. Console mencatat kode, jenis error, layar, dan lokasi source tanpa isi pesan atau secret. Periksa status order sebelum mengulangi konfirmasi. Request baca serta pembuatan/tindakan order dengan kunci idempotensi mencoba ulang satu kali saat gangguan koneksi/5xx; perubahan katalog tidak diulang otomatis.
 
 Bukti pembayaran ada pada gambar notifikasi WA, bukan arsip database. Pilihan **Hubungi buyer** menampilkan link chat langsung. Balasan teks/gambar ke notifikasi, kartu tujuan lama, atau bukti pembayaran **tidak diteruskan**; bot menampilkan kontak langsung. Submenu Percakapan buyer dihapus. Perintah pengelolaan lama seperti `/harga` dan `/setujui` hanya memberi petunjuk menuju submenu.
 

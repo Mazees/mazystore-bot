@@ -43,7 +43,7 @@ export class BuyerNavigation {
       const entries = categories.map(cat => {
         const rows = variants.filter(v => v.category_id === cat.id && !v.archived);
         const ready = rows.filter(v => v.ready);
-        return { type: 'category', id: cat.id, label: `${cat.name} (${rows.length})\n${ready.length ? `Mulai ${money(Math.min(...ready.map(v => v.price)))}` : 'Belum tersedia'}` };
+        return { type: 'category', id: cat.id, label: `${cat.name}\n${ready.length ? `Mulai ${money(Math.min(...ready.map(v => v.price)))}` : 'Belum tersedia'}` };
       });
       entries.push({ type: 'order', label: 'Pesanan saya' }, { type: 'help', label: 'Hubungi admin' });
       return options('MAZY STORE · MENU', ['KATALOG PRODUK DIGITAL & AI'], { stage: 'menu' }, entries);
@@ -57,7 +57,7 @@ export class BuyerNavigation {
       if (page > 0) entries.push({ type: 'page', page: page - 1, label: 'Halaman sebelumnya' });
       if ((page + 1) * 5 < rows.length) entries.push({ type: 'page', page: page + 1, label: 'Halaman berikutnya' });
       entries.push({ type: 'home', label: 'Kembali ke katalog' }, { type: 'help', label: 'Hubungi admin' });
-      return options(`${cat.name} (${rows.length})`, [rows.length ? `Halaman ${page + 1}` : 'Belum ada varian.'], { stage: 'variant', categoryId, page }, entries);
+      return options(cat.name, [rows.length ? `Halaman ${page + 1}` : 'Belum ada varian.'], { stage: 'variant', categoryId, page }, entries);
     };
     const quantity = async state => {
       const v = (await api.catalog()).variants.find(row => row.id === state.variantId && !row.archived);

@@ -22,7 +22,7 @@ const api = new StoreApi(config.workerUrl, config.apiSecret);
 const auth = sqliteAuth(local);
 const transport = new Transport(local, api, config);
 const status = { whatsapp: false, database: false, stopping: false };
-const bot = new StoreBot(api, transport, config, local, () => ({ ...status }));
+const bot = new StoreBot(api, transport, config, local, () => ({ ...status }), details => logger.error(details, 'Permintaan admin gagal'));
 let socket;
 let reconnect;
 let attempts = 0;

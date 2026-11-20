@@ -13,14 +13,29 @@ const location = state => Object.fromEntries(locationKeys.filter(key => state[ke
 const child = (state, next) => ({ ...next, back: location(state) });
 
 export class AdminNavigation {
-  constructor(api, transport, local, runtime = () => ({}), config = {}) {
+  constructor(api, transport, local, runtime = () => ({}), config = {}, reportError = () => {}) {
     this.api = api; this.transport = transport; this.local = local; this.runtime = runtime;
     this.adminNumber = config.adminNumber || config.adminJid?.split('@')[0];
+    this.reportError = reportError;
   }
 
   async unavailable(message) {
     const counts = this.local.outboxSummary?.() || {};
-    return this.transport.text(message.jid, screen('Admin › Koneksi', `D1 belum dapat dihubungi. Tidak ada perubahan yang dikonfirmasi.\nWhatsApp: ${this.runtime().whatsapp ? 'Terhubung' : 'Belum terhubung'}\nAntrean keluar: ${counts.pending || 0}\n\nCoba /admin lagi setelah koneksi pulih.`, { root: true }), `${message.jid}:${message.id}:admin:offline`);
+    return this.transport.text(message.jid, screen('Admin › Koneksi', `Worker/D1 belum dapat diakses.\nKode: API_NETWORK\nWhatsApp: ${this.runtime().whatsapp ? 'Terhubung' : 'Belum terhubung'}\nAntrean keluar: ${counts.pending || 0}\n\nPeriksa status pesanan sebelum mengulang konfirmasi. Coba /admin setelah koneksi pulih.`, { root: true }), `${message.jid}:${message.id}:admin:offline`);
+  }
+
+  async failure(message, error, state) {
+    const code = error.code?.startsWith('API_') ? error.code : error.status ? 'API_HTTP' : 'ADMIN_INTERNAL';
+    const source = error.stack?.split('\n').slice(1).join('\n').match(/\/src\/[a-zA-Z0-9_./-]+\.js:\d+:\d+/)?.[0];
+    this.reportError({ code, status: error.status || 0, screen: state?.screen || 'entry', errorType: error.name || 'Error', ...(source ? { source } : {}) });
+    if (code === 'API_NETWORK') return this.unavailable(message);
+    const detail = code === 'ADMIN_INTERNAL'
+      ? 'Terjadi error pada menu admin. Gangguan ini belum menunjukkan D1 bermasalah.'
+      : code === 'API_RESPONSE' ? 'Respons Worker tidak sesuai. Periksa WORKER_URL dan status Worker.'
+      : error.status === 401 || error.status === 403 ? 'Worker menolak akses. Periksa kesesuaian API_SECRET di panel dan Worker.'
+      : error.status >= 500 ? 'Worker melaporkan gangguan layanan. Periksa status pesanan sebelum mengulang.'
+      : error.message;
+    return this.transport.text(message.jid, grid('ADMIN · PERMINTAAN GAGAL', [`Kode: ${code}${error.status ? `\nHTTP: ${error.status}` : ''}`, detail, 'Ketik /admin untuk membuka ulang menu. Periksa status pesanan sebelum mengulang konfirmasi.']), `${message.jid}:${message.id}:admin:failure`);
   }
 
   async handle(message, owner) {
@@ -65,8 +80,7 @@ export class AdminNavigation {
         const target = s?.orderId ? { screen: 'order', orderId: s.orderId, back: { screen: 'orders', filter: 'all', page: 0 } } : s?.variantId ? { screen: 'variant', variantId: s.variantId, categoryId: s.categoryId, back: { screen: 'variants', categoryId: s.categoryId, page: 0 } } : { screen: 'home' };
         return this.show(ctx, target, 'Data sudah berubah. Periksa detail terbaru dan pilih tindakan lagi.');
       }
-      if (error.status && error.status < 500) return ctx.send(message.jid, `${error.message}\n\nKetik /admin untuk kembali.`, null);
-      return this.unavailable(message);
+      return this.failure(message, error, ctx.state);
     }
   }
 
