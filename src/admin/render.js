@@ -17,6 +17,6 @@ export function orderDetails(o) {
   return `${o.id}\nBuyer: ${phone(o.buyer)}\nProduk: ${o.product}\nVarian: ${o.variant}\nJumlah: ${o.quantity}\nHarga satuan: ${money(o.unit_price)}\nTotal: ${money(o.total)}\nDibuat: ${date(o.created_at)}\nStatus: ${statusLabels[o.status]}\n${o.cancel_requested ? 'Ada permintaan pembatalan.\n' : ''}${o.status === 'review' ? `Bukti: ${o.proof_relay === 'sent' ? 'sudah diteruskan ke WA admin' : 'penerusan belum terkonfirmasi'}.\nCari gambar pada notifikasi nomor order ini.\n` : ''}`;
 }
 export function variantDetails(v) {
-  return `${v.name}\nHarga: ${money(v.price)}\nStatus: ${v.archived ? 'Diarsipkan' : v.ready ? 'Buka' : 'Tutup'}\n\nDurasi & ketentuan\n${v.terms}`;
+  return `${v.name}\nHarga: ${money(v.price)}\nStatus: ${v.archived ? 'Diarsipkan' : v.ready ? 'Ready' : 'Kosong'}\n\nDurasi & ketentuan\n${v.terms}`;
 }
 import { grid, numbered } from '../ui.js';
