@@ -63,11 +63,11 @@ export class LocalStore {
       this.authSet('feature:direct-claim', true);
     });
   }
-  enqueue(id, jid, payload) {
-    this.db.prepare('INSERT OR IGNORE INTO outbox(id,jid,payload,created) VALUES (?,?,?,?)').run(id, jid, this.encrypt(payload), Date.now());
+  enqueue(id, jid, payload, status = 'pending', waId = null) {
+    this.db.prepare('INSERT OR IGNORE INTO outbox(id,jid,payload,status,wa_id,created) VALUES (?,?,?,?,?,?)').run(id, jid, this.encrypt(payload), status, waId, Date.now());
   }
-  next() {
-    const row = this.db.prepare("SELECT * FROM outbox WHERE status IN ('pending','mapping') ORDER BY created,rowid LIMIT 1").get();
+  next(status = 'pending') {
+    const row = this.db.prepare('SELECT * FROM outbox WHERE status=? ORDER BY created,rowid LIMIT 1').get(status);
     return row ? { ...row, payload: this.decrypt(row.payload) } : null;
   }
   setStatus(id, status, waId = null) {
@@ -75,14 +75,23 @@ export class LocalStore {
   }
   uncertain() { return this.db.prepare("SELECT id,jid,created,status FROM outbox WHERE status='uncertain' ORDER BY created LIMIT 30").all(); }
   outboxSummary() {
-    return this.db.prepare("SELECT COALESCE(SUM(status IN ('pending','mapping','sending')),0) AS pending,COALESCE(SUM(status='uncertain'),0) AS uncertain FROM outbox").get();
+    return this.db.prepare("SELECT COALESCE(SUM(status IN ('pending','broadcast','mapping','sending')),0) AS pending,COALESCE(SUM(status='uncertain'),0) AS uncertain FROM outbox").get();
   }
+  broadcastSummary() {
+    return this.db.prepare("SELECT COALESCE(SUM(status='broadcast'),0) AS pending,COALESCE(SUM(status='sent'),0) AS sent,COALESCE(SUM(status='uncertain'),0) AS uncertain FROM outbox WHERE id LIKE 'broadcast:%'").get();
+  }
+  queueBroadcast(key, recipients, text) {
+    this.transaction(() => {
+      for (const jid of recipients) this.enqueue(`broadcast:${key}:${jid}`, jid, { kind: 'text', text }, 'broadcast');
+    });
+  }
+  cancelBroadcast() { return this.db.prepare("UPDATE outbox SET status='cancelled' WHERE status='broadcast'").run().changes; }
   uncertainPage(page = 0) {
     const rows = this.db.prepare("SELECT id,jid,created FROM outbox WHERE status='uncertain' ORDER BY created,id LIMIT 6 OFFSET ?").all(page * 5);
     return { items: rows.slice(0,5), hasNext: rows.length > 5 };
   }
   uncertainById(id) { return this.db.prepare("SELECT id,jid,created FROM outbox WHERE id=? AND status='uncertain'").get(id); }
-  retry(id) { return this.db.prepare("UPDATE outbox SET status='pending',wa_id=NULL WHERE id=? AND status='uncertain'").run(id).changes; }
+  retry(id) { return this.db.prepare("UPDATE outbox SET status=CASE WHEN id LIKE 'broadcast:%' THEN 'broadcast' ELSE 'pending' END,wa_id=NULL WHERE id=? AND status='uncertain'").run(id).changes; }
   saveMessage(id, message) {
     this.db.prepare('INSERT OR REPLACE INTO retry_messages VALUES (?,?,?)').run(id, this.encrypt(message), Date.now());
   }
@@ -92,7 +101,7 @@ export class LocalStore {
   }
   cleanup() {
     const cutoff = Date.now() - DAY;
-    this.db.prepare('DELETE FROM outbox WHERE created<?').run(cutoff);
+    this.db.prepare("DELETE FROM outbox WHERE created<? AND status!='broadcast'").run(cutoff);
     this.db.prepare('DELETE FROM retry_messages WHERE created<?').run(cutoff);
     this.db.prepare('DELETE FROM seen WHERE created<?').run(Date.now() - 7 * DAY);
     this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');

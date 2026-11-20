@@ -61,7 +61,7 @@ export class BuyerNavigation {
     };
     const quantity = async state => {
       const v = (await api.catalog()).variants.find(row => row.id === state.variantId && !row.archived);
-      if (!v?.ready) { await menu(); return info('Varian sedang ditutup. Pilih produk lain.'); }
+      if (!v?.ready) { await menu(); return info('Varian sedang Kosong. Pilih produk lain.'); }
       await save({ stage: 'quantity', variantId: v.id, categoryId: v.category_id });
       return say(grid('MAZY STORE · JUMLAH', [`${v.name}\nHarga satuan: ${money(v.price)}\n${v.terms}`, `Masukkan kuantitas 1–${this.config.maxQuantity}.`, '/kembali: pilih varian\n/menu: katalog utama']));
     };
@@ -114,7 +114,7 @@ export class BuyerNavigation {
     if (state.stage === 'quantity' && !c.order) {
       if (!/^\d+$/.test(text) || !Number.isSafeInteger(Number(text)) || Number(text) < 1 || Number(text) > this.config.maxQuantity) return info(`Masukkan jumlah bulat 1–${this.config.maxQuantity}.\n/kembali: pilih varian\n/menu: katalog`);
       const v = (await api.catalog()).variants.find(row => row.id === state.variantId && !row.archived);
-      if (!v?.ready) { await menu(); return info('Varian sedang ditutup.'); }
+      if (!v?.ready) { await menu(); return info('Varian sedang Kosong.'); }
       return options('RINGKASAN PESANAN', [`${v.name}\nHarga satuan: ${money(v.price)}\nJumlah: ${Number(text)}\nTotal: ${money(v.price * Number(text))}`, v.terms], { stage: 'confirm', variantId: v.id, categoryId: v.category_id, quantity: Number(text), price: v.price, terms: v.terms }, [{ type: 'pay', label: 'Konfirmasi & bayar' }, { type: 'quantity', label: 'Ubah kuantitas' }, { type: 'home', label: 'Beranda' }]);
     }
     const option = /^\d+$/.test(text) ? state.options?.[Number(text) - 1] : null;
@@ -128,7 +128,7 @@ export class BuyerNavigation {
     if (option?.type === 'quantity') return quantity(state);
     if (option?.type === 'pay' && state.stage === 'confirm') {
       const v = (await api.catalog()).variants.find(row => row.id === state.variantId && !row.archived);
-      if (!v?.ready) { await menu(); return info('Varian sedang ditutup.'); }
+      if (!v?.ready) { await menu(); return info('Varian sedang Kosong.'); }
       if (v.price !== state.price || v.terms !== state.terms) {
         await quantity(state);
         return info('Harga atau ketentuan berubah. Masukkan ulang kuantitas untuk melihat ringkasan terbaru.');

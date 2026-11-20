@@ -33,9 +33,10 @@ export class StoreApi {
   }
   catalog(includeArchived = false) { return this.call(`/catalog${includeArchived ? '?archived=1' : ''}`); }
   category(data) { return this.call('/categories', 'POST', data); }
+  categoryAction(id, data) { return this.call(`/categories/${id}`, 'POST', data); }
   adminSummary() { return this.call('/admin/summary'); }
+  broadcastRecipients(after = '') { return this.call(`/admin/recipients?after=${encodeURIComponent(after)}`); }
   adminOrders(filter = 'all', page = 0) { return this.call(`/admin/orders?filter=${encodeURIComponent(filter)}&page=${page}`); }
-  adminConversations(page = 0) { return this.call(`/admin/conversations?page=${page}`); }
   customer(buyer) { return this.call(`/customers/${encodeURIComponent(buyer)}`); }
   session(buyer, state) { return this.call(`/customers/${encodeURIComponent(buyer)}/session`, 'PUT', state); }
   createOrder(data) { return this.call('/orders', 'POST', data); }
@@ -45,5 +46,4 @@ export class StoreApi {
   variant(data) { return this.call('/variants', 'POST', data); }
   map(data) { return this.call('/messages', 'POST', data); }
   message(jid, id) { return this.call(`/messages/${encodeURIComponent(id)}?jid=${encodeURIComponent(jid)}`); }
-  conversation(id) { return this.call(`/conversations/${encodeURIComponent(id)}`); }
 }

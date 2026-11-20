@@ -11,3 +11,4 @@ coverage/
 *.sqlite*
 *.backup
 /worker/wrangler.local.jsonc
+worker/seeds/legacy-catalog.sql

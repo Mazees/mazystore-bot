@@ -3,7 +3,7 @@ import { generateMessageIDV2 } from 'baileys';
 import { grid, splitMessage } from './ui.js';
 
 export class Transport {
-  constructor(store, api, config) { this.store = store; this.api = api; this.config = config; this.socket = null; this.draining = false; }
+  constructor(store, api, config) { this.store = store; this.api = api; this.config = config; this.socket = null; this.draining = false; this.mapping = false; this.nextBroadcastAt = 0; }
   attach(socket) { this.socket = socket; }
   detach(socket) { if (this.socket === socket) this.socket = null; }
   async send(jid, content) {
@@ -26,7 +26,7 @@ export class Transport {
     if (!this.socket) throw new Error('WhatsApp belum tersambung.');
     const result = await this.send(jid, { image: buffer, caption });
     if (!result?.key?.id) throw new Error('Pengiriman gambar belum terkonfirmasi.');
-    if (context) await this.api.map({ ...context, jid, waId: result.key.id });
+    if (context) this.store.enqueue(`ref:${result.key.id}`, jid, { context }, 'mapping', result.key.id);
     return result;
   }
   async drain() {
@@ -34,14 +34,8 @@ export class Transport {
     this.draining = true;
     try {
       let job;
-      while (this.socket && (job = this.store.next())) {
-        if (job.status === 'mapping') {
-          try {
-            if (job.payload.context) await this.api.map({ ...job.payload.context, jid: job.jid, waId: job.wa_id });
-            this.store.setStatus(job.id, 'sent');
-          } catch { break; }
-          continue;
-        }
+      while (this.socket && (job = this.store.next() || (Date.now() >= this.nextBroadcastAt ? this.store.next('broadcast') : null))) {
+        if (job.status === 'broadcast') this.nextBroadcastAt = Date.now() + 5000;
         let content;
         try {
           content = job.payload.kind === 'qris'
@@ -53,12 +47,27 @@ export class Transport {
           const sent = await this.send(job.jid, content);
           if (!sent?.key?.id) throw new Error('No WA message id');
           this.store.saveMessage(sent.key.id, sent.message);
-          this.store.setStatus(job.id, 'mapping', sent.key.id);
+          this.store.setStatus(job.id, job.payload.context ? 'mapping' : 'sent', sent.key.id);
         } catch {
           this.store.setStatus(job.id, 'uncertain');
           break;
         }
       }
     } finally { this.draining = false; }
+    await this.drainMappings();
+  }
+
+  async drainMappings() {
+    if (this.mapping) return;
+    this.mapping = true;
+    try {
+      let job;
+      while ((job = this.store.next('mapping'))) {
+        try {
+          if (job.payload.context) await this.api.map({ ...job.payload.context, jid: job.jid, waId: job.wa_id });
+          this.store.setStatus(job.id, 'sent');
+        } catch { break; }
+      }
+    } finally { this.mapping = false; }
   }
 }

@@ -123,6 +123,9 @@ Ketik **`/admin` atau `/menu`** dari nomor `ADMIN_NUMBER`:
 1. **Pesanan & pembayaran**: verifikasi, pesanan Diproses, pembatalan, refund, serta seluruh riwayat.
 2. **Kelola katalog**: pilih Tambah katalog untuk membuat kategori produk baru, atau pilih katalog yang ada → varian → ubah nama/harga/ketentuan, buka/tutup, arsip/pulihkan, atau tambah varian dengan kode otomatis.
 3. **Status bot & pengiriman**: koneksi WA/D1, antrean, dan pengiriman meragukan yang dapat dikirim ulang setelah pemeriksaan.
+4. **Broadcast pelanggan**: tulis pesan teks, periksa pratinjau dan jumlah penerima, lalu konfirmasi. Penerima adalah pelanggan yang tercatat di D1; nomor admin dan bot dikecualikan. Tidak mengimpor riwayat chat WhatsApp lama.
+
+Broadcast memakai antrean SQLite yang sama, dengan jeda minimal 5 detik antarpercobaan kirim selama bot berjalan. Pesan transaksi didahulukan. Menu broadcast menampilkan antrean, kiriman yang diterima WA (bukan dibaca), serta hasil meragukan. Sisa antrean dapat dihentikan setelah konfirmasi; kiriman yang sudah/sedang dikirim tidak ditarik. Antrean tersimpan saat restart. Pesan meragukan tidak otomatis dikirim ulang; periksa melalui Status bot & pengiriman. Broadcast mendukung teks maksimal 2000 karakter; gambar dan penjadwalan belum tersedia. Jeda pengiriman tidak menjamin akun bebas pembatasan WhatsApp.
 
 Nomor pilihan mengikuti layar. Maksimal lima item data per halaman; menu tetap menampilkan tindakan serta navigasi setelah daftar. Pilihan dan draft kedaluwarsa setelah 30 menit. Tindakan kritis menampilkan konfirmasi, sedangkan penolakan bukti, pembatalan admin, dan awal refund meminta alasan. Data yang berubah sejak menu ditampilkan harus diperiksa ulang.
 
@@ -130,9 +133,11 @@ Jika terjadi error, `ADMIN_INTERNAL` berarti kegagalan kode menu, `API_NETWORK` 
 
 Bukti pembayaran ada pada gambar notifikasi WA, bukan arsip database. Pilihan **Hubungi buyer** menampilkan link chat langsung. Balasan teks/gambar ke notifikasi, kartu tujuan lama, atau bukti pembayaran **tidak diteruskan**; bot menampilkan kontak langsung. Submenu Percakapan buyer dihapus. Perintah pengelolaan lama seperti `/harga` dan `/setujui` hanya memberi petunjuk menuju submenu.
 
-Varian baru dan varian hasil pemulihan arsip selalu tutup. Lengkapi ketentuan sebelum membuka penjualan. Arsip menyembunyikan varian dari buyer tanpa mengubah snapshot order lama.
+Status varian adalah **Ready / Kosong**. Varian baru dan varian hasil pemulihan arsip selalu Kosong. Lengkapi ketentuan sebelum menandainya Ready. Arsip varian menyembunyikannya dari buyer tanpa mengubah snapshot order lama.
 
 **Menambah produk/katalog utama:** `/admin` → Kelola katalog → Tambah katalog → ketik nama → konfirmasi. Nama maksimal 80 karakter; spasi dirapikan dan huruf disimpan kapital. Nama yang sudah ada ditolak. Setelah disimpan, kamu langsung masuk ke katalog baru dengan pilihan Tambah varian. Katalog baru otomatis muncul pada buyer sebagai Belum tersedia sampai ada varian yang dibuka. Katalog tidak lagi terbatas pada tujuh kategori awal; penambahan katalog tidak membuat atau membuka varian otomatis. `/kembali` membatalkan langkah isian tanpa menambah data.
+
+**Ubah/hapus katalog:** pilih katalog pada Kelola katalog → Ubah nama katalog atau Hapus katalog → konfirmasi. Hapus menghilangkan katalog dan seluruh variannya dari admin/buyer serta menolak pembelian baru. Tidak ada menu arsip/pulihkan katalog. Pesanan yang sudah dibuat mempertahankan nama dan rincian saat pembelian serta tetap dapat diselesaikan. Nama katalog yang sudah dihapus boleh dipakai untuk katalog baru.
 
 ### Mencoba checkout melalui chat nomor bot sendiri
 
@@ -142,7 +147,7 @@ Order dan QRIS tersebut **asli**, bukan sandbox. Tidak perlu mentransfer uang un
 
 ### Memperbarui instalasi yang sudah berjalan
 
-Untuk fitur **Tambah katalog**, terapkan migrasi tambahan `0003_dynamic_catalog.sql` lalu deploy Worker **sebelum** memperbarui bot panel. Jalankan dari laptop yang sudah login Cloudflare:
+Untuk pengelolaan katalog, terapkan migrasi sampai `0004_catalog_management.sql` lalu deploy Worker **sebelum** memperbarui bot panel. Jalankan dari laptop yang sudah login Cloudflare:
 
 ```sh
 npm run db:remote
@@ -158,7 +163,7 @@ Saat startup pertama versi ini, antrean relay lama dinonaktifkan dan cache retry
 ## 5. Pemulihan dan backup
 
 - Teks transaksi/notifikasi keluar disimpan terenkripsi maksimal 24 jam untuk antrean/retry. Tidak ada relay chat atau OTP. Konten tidak ditulis ke log. Referensi transaksi/pesan tanpa isi tersimpan di D1.
-- Jika send sudah terjadi tetapi pemetaan D1 gagal, bot mencoba menyimpan pemetaan lagi tanpa mengirim ulang teks.
+- Pengiriman WA dan penyimpanan referensi D1 diproses terpisah memakai antrean SQLite yang sama. Jika pemetaan D1 macet/gagal, pesan berikutnya tetap dikirim. Referensi dicoba lagi tanpa mengirim ulang pesan yang sudah terkirim; gambar yang sudah dikirim hanya menyisakan metadata di antrean, bukan salinan file.
 - Jika hasil send tidak pasti atau proses berhenti di tengah send, bot menampilkannya melalui Admin → Status bot & pengiriman. Periksa chat tujuan sebelum mengonfirmasi kirim ulang; tidak ada jaminan kirim tepat sekali.
 - Media langsung tidak masuk antrean persisten. Jika gagal, buyer diminta mengirim ulang. Gambar dalam WA mengikuti ketersediaan riwayat WA, bukan backup bot.
 - Order tidak boleh dianggap berhasil sebelum tercatat di D1. Periksa `/pesanan` setelah gangguan koneksi sebelum mengulangi.

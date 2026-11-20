@@ -155,7 +155,7 @@ async function shutdown(code = 0) {
   force.unref();
   await queue;
   socket?.end(undefined);
-  while (transport.draining) await new Promise(resolve => setTimeout(resolve, 50));
+  while (transport.draining || transport.mapping) await new Promise(resolve => setTimeout(resolve, 50));
   auth.saveCreds();
   local.close();
   process.exit(code);
