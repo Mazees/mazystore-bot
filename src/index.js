@@ -9,6 +9,7 @@ import { Transport } from './transport.js';
 import { StoreBot } from './bot.js';
 import { createApp } from './server.js';
 import { collectImage } from './media.js';
+import { resolveIncoming } from './incoming.js';
 
 const config = loadConfig();
 const logger = pino({ level: config.logLevel, redact: ['*.creds', '*.keys', '*.message', '*.text', '*.caption', '*.authorization'] });
@@ -18,8 +19,8 @@ const local = new LocalStore(config.dataDir, config.dataKey, BufferJSON);
 const api = new StoreApi(config.workerUrl, config.apiSecret);
 const auth = sqliteAuth(local);
 const transport = new Transport(local, api, config);
-const bot = new StoreBot(api, transport, config, local);
 const status = { whatsapp: false, database: false, stopping: false };
+const bot = new StoreBot(api, transport, config, local, () => ({ ...status }));
 let socket;
 let reconnect;
 let attempts = 0;
@@ -32,22 +33,20 @@ const server = createApp(status).listen(port, process.env.HOST || '0.0.0.0', () 
 server.on('error', () => { logger.fatal('Express gagal bind port. Periksa PORT pada panel.'); shutdown(1); });
 
 async function processMessage(m, sock) {
-  const jid = jidNormalizedUser(m.key.remoteJid || '');
-  if (!m.key.id || m.key.fromMe || !/^\d+@(s\.whatsapp\.net|lid)$/.test(jid)) return;
+  const incoming = await resolveIncoming(m, sock, local);
+  if (!incoming) return;
+  const { jid, buyer, selfChat } = incoming;
   const seenId = `${jid}:${m.key.id}`;
   if (local.hasSeen(seenId)) return;
   // Expired events must never become a new checkout after the dedup window.
   if (m.messageTimestamp && Number(m.messageTimestamp) * 1000 < Date.now() - 7 * 86400000) return;
   const content = normalizeMessageContent(m.message);
   if (!content || content.protocolMessage || content.reactionMessage) return;
-  const alt = jidNormalizedUser(m.key.remoteJidAlt || '');
-  const pn = jid.endsWith('@lid') ? (await sock.signalRepository.lidMapping.getPNForLID(jid) || (/^\d+@s\.whatsapp\.net$/.test(alt) ? alt : null)) : jid;
-  if (!pn) {
+  if (!buyer) {
     local.markSeen(seenId);
     await transport.text(jid, 'Identitas WhatsApp belum tersinkron. Coba kirim pesan lagi setelah beberapa saat.', `${seenId}:identity`);
     return;
   }
-  const buyer = jidNormalizedUser(pn);
   let image;
   if (content.imageMessage) {
     image = async () => {
@@ -64,13 +63,13 @@ async function processMessage(m, sock) {
   }
   const quotedId = content.extendedTextMessage?.contextInfo?.stanzaId || content.imageMessage?.contextInfo?.stanzaId;
   try {
-    await bot.handle({ jid, buyer, id: m.key.id, text, image, quotedId });
+    await bot.handle({ jid, buyer, selfChat, id: m.key.id, text, image, quotedId });
     status.database = true;
   } catch (error) {
     const known = error.status && error.status < 500;
     const mediaError = error.message?.startsWith('Gambar terlalu besar');
     if (!known && !mediaError) { status.database = false; logger.warn('Permintaan gagal. Periksa koneksi WA/API; konten pesan tidak dicatat.'); }
-    await transport.text(jid, known || mediaError ? error.message : 'Permintaan belum berhasil dipastikan. Periksa /pesanan sebelum mengulang. Jika gambar belum sampai ke admin, kirim ulang atau gunakan /chat.', `${seenId}:error`);
+    await transport.text(jid, known || mediaError ? error.message : buyer === config.adminJid && !selfChat ? 'Permintaan admin belum berhasil. Ketik /admin untuk membuka ulang menu; periksa status order sebelum mengulang tindakan.' : 'Permintaan belum berhasil dipastikan. Periksa /pesanan sebelum mengulang. Jika gambar belum sampai ke admin, kirim ulang atau gunakan /chat.', `${seenId}:error`);
   } finally {
     local.markSeen(seenId);
   }
@@ -108,7 +107,7 @@ function connect() {
         attempts = 0;
         transport.attach(sock);
         logger.info('WhatsApp tersambung');
-        await transport.text(config.adminJid, `Bot Mazy Store aktif. Ketik /produk untuk mengatur katalog.\n${local.uncertain().length ? 'Ada pesan yang perlu diperiksa melalui /gagalkirim.' : ''}`, `startup:${Date.now()}`);
+        await transport.text(config.adminJid, `Bot Mazy Store aktif. Ketik /admin untuk membuka menu pengelolaan.\n${local.uncertain().length ? 'Ada pengiriman yang perlu diperiksa melalui Status bot & pengiriman.' : ''}`, `startup:${Date.now()}`);
         void transport.drain().catch(() => logger.warn('Antrean pengiriman belum selesai.'));
       }
       if (update.connection === 'close' && socket === sock) {

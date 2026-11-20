@@ -49,7 +49,7 @@ npx wrangler login
 npx wrangler d1 create mazy-store
 ```
 
-Salin `database_id` ke `worker/wrangler.jsonc`, lalu:
+Salin `database_id` ke `worker/wrangler.local.jsonc`, lalu:
 
 ```sh
 npm run db:remote
@@ -101,37 +101,45 @@ Dalam mode chat, angka termasuk OTP diteruskan sebagai teks. Balasan admin otoma
 
 ### Admin
 
-Kirim perintah dari nomor `ADMIN_NUMBER` ke nomor bot. Semua varian awalnya **TUTUP**. Durasi/ketentuan placeholder harus dilengkapi sebelum membuka produk. API key belum punya paket awal, isi melalui `/tambahvarian`.
+Dari nomor `ADMIN_NUMBER`, ketik **`/admin` atau `/menu`**. Pengelolaan memakai submenu angka, bukan daftar perintah panjang:
 
-| Perintah | Fungsi |
-| --- | --- |
-| `/produk` | Lihat kode, harga, ketentuan, dan ready |
-| `/tambahvarian` | Wizard kategori, kode, nama, harga, ketentuan |
-| `/ubahvarian <kode>` | Wizard pembaruan varian |
-| `/batalsetup` | Keluar dari wizard |
-| `/harga <kode> <rupiah>` | Mengubah harga |
-| `/ready <kode> on` atau `off` | Buka/tutup varian tanpa stok numerik |
-| `/order [MZ-id]` | Daftar maksimal 100 order aktif atau detail order |
-| `/setujui <MZ-id>` | Nyatakan pembayaran valid setelah cek uang masuk |
-| `/tolakbukti <MZ-id> <alasan>` | Minta foto bukti ulang |
-| `/selesai <MZ-id>` | Seluruh unit pesanan sudah diserahkan |
-| `/batalkan <MZ-id> <alasan>` | Tutup order yang pembayarannya belum disetujui |
-| `/refund <MZ-id> <alasan>` | Mulai penanganan refund order berbayar |
-| `/refundselesai <MZ-id>` | Konfirmasi uang refund sudah dikembalikan |
-| `/lanjutkan <MZ-id>` | Hapus permintaan pembatalan setelah disepakati buyer |
-| `/balas <C-id> <pesan>` | Kirim teks ke percakapan tertentu |
-| `/gagalkirim` | Pesan dengan hasil pengiriman tidak pasti |
-| `/ulang <id>` | Kirim ulang pesan meragukan setelah cek chat tujuan |
+1. **Pesanan & pembayaran**: antrean verifikasi, pesanan diproses, pembatalan, refund, dan riwayat semua status.
+2. **Kelola katalog**: pilih kategori → varian → ubah nama/harga/ketentuan, buka/tutup, atau arsipkan. Tambah varian lewat pilihan 6 pada daftar kategori; kode dibuat otomatis. Varian baru dan varian yang dipulihkan selalu tutup.
+3. **Percakapan buyer**: pilih buyer → Balas buyer → balas kartu tujuan dengan teks/gambar. Daftar menunjukkan aktivitas, bukan status dibaca.
+4. **Status bot & pengiriman**: koneksi WA/D1, jumlah antrean, serta pengiriman meragukan yang dapat dipilih untuk pemeriksaan dan konfirmasi kirim ulang.
 
-Untuk teks/gambar biasa, **balas pesan notifikasi atau chat buyer** agar tujuannya jelas. Pesan admin tanpa tujuan tidak diteruskan. Nomor percakapan `C...` tersedia di notifikasi. Jika pemetaan pesan belum tersimpan karena D1 bermasalah, gunakan `/balas`.
+Navigasi konsisten: **0 = kembali, 00 = beranda, 8/9 = halaman sebelumnya/berikutnya** jika tersedia. Maksimal lima item data per halaman. Pilihan dan draft kedaluwarsa setelah 30 menit tanpa aktivitas. `/batal` membatalkan isian saat ini dengan kembali satu langkah. Perintah pengelolaan lama seperti `/harga` dan `/setujui` tidak lagi mengeksekusi perubahan; bot menunjukkan jalur submenu penggantinya.
 
-QR berisi nominal tidak memberikan callback atau mematikan QR lama. Selalu cek uang masuk; bukti foto saja bukan dasar otomatis lunas. Untuk transfer setelah pembatalan, buyer memakai `/chat`; admin menanganinya manual tanpa mengubah order batal menjadi lunas.
+Admin memilih order dari daftar, bukan mengetik ID. Persetujuan pembayaran, pembatalan, penyelesaian, serta refund melewati konfirmasi. Penolakan bukti, pembatalan, dan awal refund meminta alasan. Jika data berubah sejak menu ditampilkan, detail diperbarui dan tindakan harus dipilih ulang.
+
+Untuk teks/gambar biasa, **balas notifikasi buyer atau kartu tujuan**. Balasan termasuk angka/OTP diteruskan sebagai chat; angka yang membalas pesan menu tetap menjadi navigasi. Pesan admin tanpa tujuan tidak diteruskan. Referensi tidak dikenali diarahkan ke Percakapan buyer. Bukti bayar berada di gambar notifikasi WA; menu tidak mengambil ulang gambar dari database.
+
+Semua varian awalnya **TUTUP**. Lengkapi durasi/ketentuan sebelum membuka penjualan. Arsip menyembunyikan varian dari katalog buyer dan menutup pembelian baru, sementara data order lama tetap utuh. API key belum punya paket awal; gunakan Tambah varian pada kategorinya.
+
+### Mencoba checkout melalui chat nomor bot sendiri
+
+Buka WhatsApp akun bot, chat ke **nomornya sendiri**, lalu ketik `/menu`. Pesan yang kamu ketik sendiri diterima sebagai input buyer: pilih produk, varian, kuantitas, konfirmasi, `/done`, dan kirim bukti. Tidak ada prefix, flag `.env`, atau perintah mode test tambahan. Akses admin tetap dari nomor admin terpisah.
+
+Pesan otomatis bot diberi ID sebelum pengiriman dan dikecualikan dari pemrosesan agar tidak terjadi loop. Pesan `fromMe` ke orang lain tidak diperlakukan sebagai input buyer. Order dari chat sendiri menggunakan data dan QRIS **asli**, bukan sandbox pembayaran. Tidak perlu mentransfer uang untuk menguji navigasi; verifikasi admin tetap manual.
+
+### Memperbarui instalasi yang sudah berjalan
+
+Jangan ubah `0001_init.sql` atau menghapus database/sesi. Dengan `database_id` dan secret yang sudah terkonfigurasi di laptop:
+
+```sh
+npm run db:remote
+npm run worker:deploy
+```
+
+Ini menerapkan **0002_admin_ux.sql** dan menambahkan API admin. Deploy Worker sebelum memperbarui bot panel. `API_SECRET`, `DATA_KEY`, QRIS, serta nomor admin tetap memakai konfigurasi sebelumnya; tidak perlu menjalankan setup atau pairing ulang untuk update ini.
+
+Setelah perubahan source sudah di-commit/push, perbarui kode di panel dengan `git pull`, hentikan proses bot lama, lalu jalankan bot menggunakan Node.js 26. Ketik `/admin` dari WA admin untuk membuka menu baru. Konfigurasi lokal `worker/wrangler.local.jsonc` diabaikan Git. `worker/wrangler.jsonc` adalah template publik tanpa ID database; jangan mengisi ID di template tersebut.
 
 ## 5. Pemulihan dan backup
 
 - Teks keluar disimpan terenkripsi maksimal 24 jam untuk antrean/retry. Konten tidak ditulis ke log. Referensi transaksi/pesan tanpa isi tersimpan di D1.
 - Jika send sudah terjadi tetapi pemetaan D1 gagal, bot mencoba menyimpan pemetaan lagi tanpa mengirim ulang teks.
-- Jika hasil send tidak pasti atau proses berhenti di tengah send, bot menandainya di `/gagalkirim`. Periksa chat tujuan sebelum `/ulang`; tidak ada jaminan kirim tepat sekali.
+- Jika hasil send tidak pasti atau proses berhenti di tengah send, bot menampilkannya melalui Admin → Status bot & pengiriman. Periksa chat tujuan sebelum mengonfirmasi kirim ulang; tidak ada jaminan kirim tepat sekali.
 - Media langsung tidak masuk antrean persisten. Jika gagal, buyer diminta mengirim ulang. Gambar dalam WA mengikuti ketersediaan riwayat WA, bukan backup bot.
 - Order tidak boleh dianggap berhasil sebelum tercatat di D1. Periksa `/pesanan` setelah gangguan koneksi sebelum mengulangi.
 - Pantau `/readyz`, penggunaan RAM/disk, serta console lifecycle. Atur retensi console/log melalui panel karena stdout dikelola panel.
@@ -147,7 +155,7 @@ Unduh file `.backup` ke perangkat lain dan hapus salinan hosting. Isinya auth/an
 Ekspor D1 dari komputer pengembangan:
 
 ```sh
-npx wrangler d1 export mazy-store --remote --output=mazy-store-backup.sql --config worker/wrangler.jsonc
+npx wrangler d1 export mazy-store --remote --output=mazy-store-backup.sql --config worker/wrangler.local.jsonc
 ```
 
 Lakukan backup di luar hosting setiap hari saat toko aktif. Backup lama mungkin masih berisi data sementara pada waktu backup; hapus backup sesi lama setelah 7 hari dan simpan kunci secara privat. Restore D1 hanya saat bot dihentikan agar data transaksi tidak bersilangan.

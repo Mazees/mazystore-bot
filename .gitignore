@@ -10,4 +10,4 @@ coverage/
 *.log
 *.sqlite*
 *.backup
-
+/worker/wrangler.local.jsonc

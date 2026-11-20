@@ -10,3 +10,11 @@ try {
   if (error.code === 'EEXIST') console.log('.env sudah ada; tidak ditimpa.');
   else throw error;
 }
+
+const workerTemplate = await readFile(new URL('../worker/wrangler.jsonc', import.meta.url), 'utf8');
+try {
+  await writeFile(new URL('../worker/wrangler.local.jsonc', import.meta.url), workerTemplate, { flag: 'wx', mode: 0o600 });
+  console.log('worker/wrangler.local.jsonc dibuat. Isi database_id di file lokal ini saat menyiapkan D1; file ini diabaikan Git.');
+} catch (error) {
+  if (error.code !== 'EEXIST') throw error;
+}

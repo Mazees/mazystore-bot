@@ -49,6 +49,8 @@ export class LocalStore {
   }
   hasSeen(id) { return Boolean(this.db.prepare('SELECT 1 FROM seen WHERE id=?').get(id)); }
   markSeen(id) { this.db.prepare('INSERT OR IGNORE INTO seen VALUES (?,?)').run(id, Date.now()); }
+  markOutgoing(id) { this.markSeen(`outgoing:${id}`); }
+  isOutgoing(id) { return this.hasSeen(`outgoing:${id}`); }
   enqueue(id, jid, payload) {
     this.db.prepare('INSERT OR IGNORE INTO outbox(id,jid,payload,created) VALUES (?,?,?,?)').run(id, jid, this.encrypt(payload), Date.now());
   }
@@ -60,6 +62,14 @@ export class LocalStore {
     this.db.prepare('UPDATE outbox SET status=?,wa_id=COALESCE(?,wa_id) WHERE id=?').run(status, waId, id);
   }
   uncertain() { return this.db.prepare("SELECT id,jid,created,status FROM outbox WHERE status='uncertain' ORDER BY created LIMIT 30").all(); }
+  outboxSummary() {
+    return this.db.prepare("SELECT COALESCE(SUM(status IN ('pending','mapping','sending')),0) AS pending,COALESCE(SUM(status='uncertain'),0) AS uncertain FROM outbox").get();
+  }
+  uncertainPage(page = 0) {
+    const rows = this.db.prepare("SELECT id,jid,created FROM outbox WHERE status='uncertain' ORDER BY created,id LIMIT 6 OFFSET ?").all(page * 5);
+    return { items: rows.slice(0,5), hasNext: rows.length > 5 };
+  }
+  uncertainById(id) { return this.db.prepare("SELECT id,jid,created FROM outbox WHERE id=? AND status='uncertain'").get(id); }
   retry(id) { return this.db.prepare("UPDATE outbox SET status='pending',wa_id=NULL WHERE id=? AND status='uncertain'").run(id).changes; }
   saveMessage(id, message) {
     this.db.prepare('INSERT OR REPLACE INTO retry_messages VALUES (?,?,?)').run(id, this.encrypt(message), Date.now());

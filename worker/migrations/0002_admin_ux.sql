@@ -1,0 +1,10 @@
+ALTER TABLE variants ADD COLUMN archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1));
+ALTER TABLE variants ADD COLUMN version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'relay' CHECK(kind IN ('relay','menu','card'));
+ALTER TABLE messages ADD COLUMN menu_token TEXT;
+ALTER TABLE customers ADD COLUMN last_contact_at TEXT;
+CREATE INDEX variants_catalog ON variants(category_id,archived,id);
+CREATE INDEX orders_admin ON orders(status,created_at,id);
+CREATE INDEX customers_activity ON customers(last_contact_at,conversation_id);
+UPDATE customers SET last_contact_at=(SELECT MAX(created_at) FROM messages WHERE messages.buyer=customers.buyer) WHERE EXISTS(SELECT 1 FROM messages WHERE messages.buyer=customers.buyer);

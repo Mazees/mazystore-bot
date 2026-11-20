@@ -38,10 +38,36 @@ async function route(request, env) {
   const method = request.method;
   if (path[0] !== 'v1') fail(404, 'Endpoint tidak ditemukan.');
   const [, resource, id, sub] = path;
+  if (resource === 'admin' && method === 'GET') {
+    if (id === 'summary') return db.prepare(`SELECT
+      COALESCE(SUM(status='review'),0) AS review,
+      COALESCE(SUM(status='processing'),0) AS processing,
+      COALESCE(SUM(cancel_requested=1 AND status NOT IN ('completed','cancelled','refunded')),0) AS cancellations
+      FROM orders`).first();
+    const page = Number(url.searchParams.get('page') || 0);
+    if (!Number.isSafeInteger(page) || page < 0 || page > 100000) fail(400, 'Halaman tidak valid.');
+    if (id === 'orders') {
+      const filters = {
+        all: '1=1', review: "status='review'", processing: "status='processing'",
+        cancellation: "cancel_requested=1 AND status NOT IN ('completed','cancelled','refunded')",
+        refund: "status='refund_pending'", awaiting_payment: "status='awaiting_payment'",
+        awaiting_proof: "status='awaiting_proof'", completed: "status='completed'",
+        cancelled: "status='cancelled'", refunded: "status='refunded'",
+      };
+      const filter = filters[url.searchParams.get('filter') || 'all'];
+      if (!filter) fail(400, 'Filter tidak valid.');
+      const result = await sql(db, `SELECT * FROM orders WHERE ${filter} ORDER BY created_at DESC,id DESC LIMIT 6 OFFSET ?`, page * 5).all();
+      return { items: result.results.slice(0,5), page, hasNext: result.results.length > 5 };
+    }
+    if (id === 'conversations') {
+      const result = await sql(db, 'SELECT buyer,conversation_id,last_contact_at FROM customers WHERE last_contact_at IS NOT NULL ORDER BY last_contact_at DESC,conversation_id DESC LIMIT 6 OFFSET ?', page * 5).all();
+      return { items: result.results.slice(0,5), page, hasNext: result.results.length > 5 };
+    }
+  }
   if (resource === 'catalog' && method === 'GET') {
     const [categories, variants] = await Promise.all([
       db.prepare('SELECT * FROM categories ORDER BY id').all(),
-      db.prepare('SELECT * FROM variants ORDER BY category_id,id').all(),
+      db.prepare(`SELECT * FROM variants ${url.searchParams.get('archived') === '1' ? '' : 'WHERE archived=0'} ORDER BY category_id,id`).all(),
     ]);
     return { categories: categories.results, variants: variants.results };
   }
@@ -63,16 +89,29 @@ async function route(request, env) {
   if (resource === 'variants' && method === 'POST') {
     const v = await bodyOf(request);
     if (!text(v.id, 64) || !/^[a-z0-9-]+$/.test(v.id)) fail(400, 'Kode varian tidak valid.');
+    const current = await sql(db, 'SELECT * FROM variants WHERE id=?', v.id).first();
+    if (v.mode !== 'add' && !current) fail(404, 'Varian tidak ditemukan.');
+    if (v.expectedVersion !== undefined && (!Number.isSafeInteger(v.expectedVersion) || v.expectedVersion !== current?.version)) fail(409, 'Varian berubah. Buka detail terbaru.');
+    const update = async (fields, ...values) => {
+      const result = await sql(db, `UPDATE variants SET ${fields},version=version+1 WHERE id=? AND version=?`, ...values, v.id, current.version).run();
+      if (!result.meta.changes) fail(409, 'Varian berubah. Buka detail terbaru.');
+    };
     if (v.mode === 'price') {
       if (!Number.isSafeInteger(v.price) || v.price < 1 || v.price > 9999999999) fail(400, 'Harga tidak valid.');
-      await sql(db, 'UPDATE variants SET price=? WHERE id=?', v.price, v.id).run();
+      await update('price=?', v.price);
     } else if (v.mode === 'ready') {
       if (typeof v.ready !== 'boolean') fail(400, 'Status ready tidak valid.');
-      await sql(db, 'UPDATE variants SET ready=? WHERE id=?', Number(v.ready), v.id).run();
+      if (v.ready && current.archived) fail(409, 'Pulihkan varian dari arsip sebelum membuka penjualan.');
+      await update('ready=?', Number(v.ready));
+    } else if (v.mode === 'name' || v.mode === 'terms') {
+      if (!text(v.value, v.mode === 'name' ? 120 : 2000)) fail(400, 'Nilai tidak valid.');
+      await update(`${v.mode}=?`, v.value);
+    } else if (v.mode === 'archive' || v.mode === 'restore') {
+      await update('archived=?,ready=0', v.mode === 'archive' ? 1 : 0);
     } else if (v.mode === 'add' || v.mode === 'edit') {
       if (!Number.isInteger(v.categoryId) || v.categoryId < 1 || v.categoryId > 7 || !text(v.name, 120) || !text(v.terms, 2000) || !Number.isSafeInteger(v.price) || v.price < 1 || v.price > 9999999999) fail(400, 'Detail varian tidak valid.');
       if (v.mode === 'add') await sql(db, 'INSERT INTO variants(id,category_id,name,price,terms) VALUES (?,?,?,?,?) ON CONFLICT(id) DO NOTHING', v.id, v.categoryId, v.name, v.price, v.terms).run();
-      else await sql(db, 'UPDATE variants SET category_id=?,name=?,price=?,terms=? WHERE id=?', v.categoryId, v.name, v.price, v.terms, v.id).run();
+      else await update('category_id=?,name=?,price=?,terms=?', v.categoryId, v.name, v.price, v.terms);
     } else fail(400, 'Operasi varian tidak valid.');
     const result = await sql(db, 'SELECT * FROM variants WHERE id=?', v.id).first();
     if (!result) fail(404, 'Varian tidak ditemukan.');
@@ -92,7 +131,7 @@ async function route(request, env) {
       try {
         await sql(db, `INSERT INTO orders(id,request_key,buyer,variant_id,product,variant,terms,unit_price,quantity,total,status,qris_version)
           SELECT ?,?,?,v.id,c.name,v.name,v.terms,v.price,?,v.price * ?,'awaiting_payment',?
-          FROM variants v JOIN categories c ON c.id=v.category_id WHERE v.id=? AND v.ready=1 AND v.price=? AND v.terms=?`,
+          FROM variants v JOIN categories c ON c.id=v.category_id WHERE v.id=? AND v.ready=1 AND v.archived=0 AND v.price=? AND v.terms=?`,
         orderId, data.key, data.buyer, data.quantity, data.quantity, data.qrisVersion, data.variantId, data.expectedPrice, data.expectedTerms).run();
       } catch (error) {
         const retry = await sql(db, 'SELECT * FROM orders WHERE request_key=?', data.key).first();
@@ -118,6 +157,7 @@ async function route(request, env) {
       }
       const admin = data.actor === 'admin';
       if (!admin && data.actor !== order.buyer) fail(403, 'Bukan pemilik order.');
+      if (data.expectedVersion !== undefined && (!Number.isSafeInteger(data.expectedVersion) || data.expectedVersion !== order.version)) fail(409, 'Order berubah. Buka detail terbaru.');
       const transitions = {
         done: { from: ['awaiting_payment'], to: 'awaiting_proof', admin: false },
         submit_proof: { from: ['awaiting_proof'], to: 'review', admin: false, extra: ",proof_relay='pending'" },
@@ -135,9 +175,11 @@ async function route(request, env) {
       if (!t || (t.admin && !admin)) fail(403, 'Tindakan tidak diizinkan.');
       if (!t.from.includes(order.status)) fail(409, 'Status order tidak sesuai untuk tindakan ini.');
       if (data.action === 'approve' && order.cancel_requested) fail(409, 'Selesaikan permintaan pembatalan terlebih dahulu.');
-      if (['reject_proof','refund'].includes(data.action) && !text(data.reason)) fail(400, 'Alasan wajib diisi.');
+      if (['reject_proof','refund'].includes(data.action) || (admin && data.action === 'cancel')) {
+        if (!text(data.reason)) fail(400, 'Alasan wajib diisi.');
+      }
       const result = await db.batch([
-        sql(db, `UPDATE orders SET status=?,last_action_key=?,updated_at=CURRENT_TIMESTAMP${t.extra || ''} WHERE id=? AND status=?${data.action === 'approve' ? ' AND cancel_requested=0' : ''}`, t.to, data.key, id, order.status),
+        sql(db, `UPDATE orders SET status=?,last_action_key=?,updated_at=CURRENT_TIMESTAMP,version=version+1${t.extra || ''} WHERE id=? AND version=? AND status=?${data.action === 'approve' ? ' AND cancel_requested=0' : ''}`, t.to, data.key, id, order.version, order.status),
         sql(db, 'INSERT INTO order_actions(action_key,order_id,action,actor,reason) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND last_action_key=?)', data.key, id, data.action, data.actor, data.reason || '', id, data.key),
       ]);
       if (!result[0].meta.changes) fail(409, 'Order sudah berubah. Periksa ulang.');
@@ -147,18 +189,23 @@ async function route(request, env) {
   if (resource === 'messages') {
     if (method === 'GET') {
       const result = await sql(db, 'SELECT * FROM messages WHERE jid=? AND wa_id=?', url.searchParams.get('jid'), id).first();
-      if (!result) fail(404, 'Referensi pesan tidak ditemukan. Gunakan /balas.');
+      if (!result) fail(404, 'Referensi pesan tidak ditemukan. Buka /admin → Percakapan buyer.');
       return result;
     }
     if (method === 'POST') {
       const m = await bodyOf(request);
       if (!isBuyer(m.buyer) || !isBuyer(m.jid) || !text(m.waId, 200) || !['buyer','admin'].includes(m.role)) fail(400, 'Referensi pesan tidak valid.');
+      const kind = m.kind || 'relay';
+      if (!['relay','menu','card'].includes(kind) || (kind === 'menu' && !text(m.menuToken,100))) fail(400, 'Jenis referensi tidak valid.');
       await customer(db, m.buyer);
       if (m.orderId) {
         const owner = await sql(db, 'SELECT buyer FROM orders WHERE id=?', m.orderId).first();
         if (!owner || owner.buyer !== m.buyer) fail(400, 'Order tidak sesuai buyer.');
       }
-      await sql(db, 'INSERT OR IGNORE INTO messages(jid,wa_id,buyer,order_id,role) VALUES (?,?,?,?,?)', m.jid, m.waId, m.buyer, m.orderId || null, m.role).run();
+      await db.batch([
+        sql(db, 'INSERT OR IGNORE INTO messages(jid,wa_id,buyer,order_id,role,kind,menu_token) VALUES (?,?,?,?,?,?,?)', m.jid, m.waId, m.buyer, m.orderId || null, m.role, kind, m.menuToken || null),
+        sql(db, 'UPDATE customers SET last_contact_at=CURRENT_TIMESTAMP WHERE buyer=? AND ? <> ?', m.buyer, kind, 'menu'),
+      ]);
       return { ok: true };
     }
   }

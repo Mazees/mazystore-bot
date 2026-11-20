@@ -1,9 +1,17 @@
 import { generateDynamicQris, renderQris } from './qris.js';
+import { generateMessageIDV2 } from 'baileys';
 
 export class Transport {
   constructor(store, api, config) { this.store = store; this.api = api; this.config = config; this.socket = null; this.draining = false; }
   attach(socket) { this.socket = socket; }
   detach(socket) { if (this.socket === socket) this.socket = null; }
+  async send(jid, content) {
+    const socket = this.socket;
+    if (!socket) throw new Error('WhatsApp belum tersambung.');
+    const messageId = generateMessageIDV2(socket.user?.id);
+    this.store.markOutgoing(messageId);
+    return socket.sendMessage(jid, content, { messageId });
+  }
   async text(jid, text, id, context = null) {
     const chars = Array.from(text);
     for (let offset = 0; offset < chars.length; offset += 4000) {
@@ -18,7 +26,7 @@ export class Transport {
   }
   async image(jid, buffer, caption, context = null) {
     if (!this.socket) throw new Error('WhatsApp belum tersambung.');
-    const result = await this.socket.sendMessage(jid, { image: buffer, caption });
+    const result = await this.send(jid, { image: buffer, caption });
     if (!result?.key?.id) throw new Error('Pengiriman gambar belum terkonfirmasi.');
     if (context) await this.api.map({ ...context, jid, waId: result.key.id });
     return result;
@@ -44,7 +52,7 @@ export class Transport {
         } catch { this.store.setStatus(job.id, 'uncertain'); continue; }
         this.store.setStatus(job.id, 'sending');
         try {
-          const sent = await this.socket.sendMessage(job.jid, content);
+          const sent = await this.send(job.jid, content);
           if (!sent?.key?.id) throw new Error('No WA message id');
           this.store.saveMessage(sent.key.id, sent.message);
           this.store.setStatus(job.id, 'mapping', sent.key.id);
