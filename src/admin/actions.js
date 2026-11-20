@@ -1,4 +1,6 @@
 import { statusLabels } from './render.js';
+import { claimMessage } from '../contact.js';
+import { grid } from '../ui.js';
 
 export function orderActions(order) {
   const choices = [];
@@ -21,11 +23,9 @@ export const requiresReason = action => ['reject_proof','cancel','refund'].inclu
 export async function executeOrderAction(api, order, pending) {
   return api.action(order.id, { key: pending.key, action: pending.action, actor: 'admin', reason: pending.reason || '', expectedVersion: pending.version });
 }
-export async function notifyOrderAction(api, updated, pending, send) {
-  if (['approve','reject_proof'].includes(pending.action)) {
-    const buyer = await api.customer(updated.buyer);
-    await api.session(updated.buyer, { ...buyer.session, chat: pending.action === 'approve', chatOrderId: updated.id });
-  }
-  const suffix = pending.action === 'approve' ? '\nChat admin aktif. Balasanmu akan diteruskan. /menu untuk kembali berbelanja.' : pending.action === 'reject_proof' ? '\nSilakan kirim ulang foto bukti pembayaran.' : '';
-  await send(updated.buyer, `*PESANAN ${updated.id}*\nStatus: ${statusLabels[updated.status]}${pending.action === 'clear_cancel' ? '\nPermintaan pembatalan ditutup sesuai kesepakatan.' : ''}${pending.reason ? `\nCatatan admin: ${pending.reason}` : ''}${suffix}`, { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay' });
+export async function notifyOrderAction(updated, pending, send, adminNumber) {
+  const content = pending.action === 'approve'
+    ? claimMessage(adminNumber, updated)
+    : grid('MAZY STORE · PESANAN', [`ID Pesanan: ${updated.id}\nStatus: ${statusLabels[updated.status]}`, pending.reason ? `Catatan admin: ${pending.reason}` : '', pending.action === 'reject_proof' ? 'Silakan kirim ulang foto bukti pembayaran.' : pending.action === 'clear_cancel' ? 'Permintaan pembatalan ditutup sesuai kesepakatan.' : '/pesanan untuk melihat status.']);
+  await send(updated.buyer, content, { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay', purpose: 'transaction' });
 }

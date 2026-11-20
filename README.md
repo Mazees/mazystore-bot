@@ -2,7 +2,7 @@
 
 Bot WhatsApp untuk reseller produk AI: Node.js 26 LTS, Express 5, Baileys, Cloudflare Worker + D1, dan SQLite lokal untuk sesi WA. Semua kode aplikasi menggunakan JavaScript ES Modules.
 
-Alur buyer: **pilih produk → varian → kuantitas → konfirmasi → bayar QR sesuai nominal → `/done` → kirim foto bukti → verifikasi admin → proses → selesai**.
+Alur buyer: **pilih produk → varian → kuantitas → konfirmasi → bayar QR sesuai nominal → `/done` → kirim foto bukti → admin menyetujui → CLAIM langsung ke WA admin → barang diserahkan → admin menandai Selesai**.
 
 ## Pembagian aplikasi
 
@@ -84,60 +84,69 @@ Pastikan `/home/container`/folder project tetap tersimpan setelah restart. Panel
 
 ## 4. Operasional WhatsApp
 
-### Buyer
+### Tampilan bersama buyer dan admin
+
+Menu buyer/admin, detail order, konfirmasi, pembayaran, dan CLAIM memakai frame monospace dengan garis kiri, atas, pemisah, dan bawah saja. Tidak ada garis kanan atau spasi pengisi di ujung baris. Teks panjang tetap dibungkus otomatis, termasuk Unicode. Link WhatsApp berada di luar frame supaya mudah diklik. Pesan panjang dipecah menjadi beberapa frame.
+
+Semua pilihan memakai **1, 2, 3, ... sesuai urutan layar**, termasuk Kembali, Beranda, dan pindah halaman. Tidak ada nomor navigasi khusus 0, 00, 6/7, atau 8/9. Saat mengisi nama, harga, alasan, atau kuantitas, gunakan `/kembali`; angka adalah data, bukan navigasi. `/admin` membuka beranda admin dan `/menu` membuka katalog buyer (atau beranda jika pengirim adalah admin).
+
+Jumlah varian nonarsip ditampilkan di samping kategori, misalnya `CHATGPT API KEY (0)`. Varian tutup tetap termasuk hitungan tersebut; status Buka/Tutup ditampilkan pada varian masing-masing. Kategori kosong menampilkan pilihan berurutan: Tambah varian, Lihat arsip, Kembali, Beranda.
+
+### Buyer dan CLAIM
 
 | Perintah | Fungsi |
 | --- | --- |
-| `/menu` | Katalog tujuh kategori AI; keluar dari mode chat |
-| `/pesanan` | Order aktif; kirim ulang QR jika belum `/done` |
-| `/done` | Sudah membayar; bot meminta foto bukti, belum lunas |
+| `/menu` | Katalog tujuh kategori AI |
+| `/pesanan` | Status order aktif; kirim ulang QR sebelum bayar atau link CLAIM saat Diproses |
+| `/done` | Menyatakan sudah membayar; bot meminta foto bukti, belum lunas |
 | `/batal` | Batalkan sebelum `/done`; setelahnya minta pemeriksaan admin |
-| `/chat` | Chat dengan admin, termasuk sebelum membeli/setelah selesai |
-| `/akhirichat` | Keluar dari mode chat |
+| `/chat` | Link WA pribadi admin; tidak mengaktifkan relay |
+| `/kembali` | Kembali dari isian ke langkah sebelumnya |
 
-Jumlah 1–100 per order (bisa diturunkan melalui `MAX_QUANTITY`). Satu buyer satu order aktif. Tidak ada waktu kedaluwarsa otomatis. Harga dan ketentuan disalin ke order. Bila berubah sebelum konfirmasi, buyer diminta memeriksa ringkasan baru. Menutup varian tidak membatalkan order lama.
+Jumlah 1–100 per order (bisa diturunkan melalui `MAX_QUANTITY`). Satu buyer satu order aktif; tidak ada kedaluwarsa otomatis. Harga dan ketentuan disalin ke order. Perubahan harga/ketentuan sebelum konfirmasi meminta buyer memeriksa ringkasan baru.
 
-Dalam mode chat, angka termasuk OTP diteruskan sebagai teks. Balasan admin otomatis membuka mode chat buyer. Setelah pembayaran disetujui, mode chat juga aktif. Untuk kirim gambar bantuan sebelum bayar, buyer membuka `/chat`; bukti pembayaran resmi tetap melalui `/done`.
+Setelah admin memeriksa uang masuk dan menyetujui pembayaran, status menjadi **Diproses** dan buyer menerima link `wa.me` menuju `ADMIN_NUMBER` dengan pesan:
+
+```text
+CLAIM
+ID Pesanan: MZ-XXXXXXXXXXXXXXXX
+```
+
+Link CLAIM tidak diberikan untuk order belum dibayar atau masih menunggu verifikasi. `/pesanan` dapat mengirim ulang link selama Diproses. Penyerahan barang, OTP, kredensial, dan bantuan dilakukan **langsung di chat pribadi buyer dengan admin**, bukan melalui bot. Setelah seluruh barang diserahkan, admin menandai pesanan Selesai di submenu order. Status Diproses tetap menahan pembelian baru sampai selesai atau refund ditutup.
+
+Untuk pertanyaan sebelum membayar, `/chat` membuka WA admin dengan pesan pertanyaan umum/order tanpa header CLAIM. Foto hanya diteruskan sebagai bukti pembayaran setelah `/done`; gambar bantuan dan pesan biasa tidak diteruskan. `/akhirichat` lama hanya memberi petunjuk kontak langsung. Mode chat dari sesi lama tidak mengaktifkan relay kembali.
 
 ### Admin
 
-Dari nomor `ADMIN_NUMBER`, ketik **`/admin` atau `/menu`**. Pengelolaan memakai submenu angka, bukan daftar perintah panjang:
+Ketik **`/admin` atau `/menu`** dari nomor `ADMIN_NUMBER`:
 
-1. **Pesanan & pembayaran**: antrean verifikasi, pesanan diproses, pembatalan, refund, dan riwayat semua status.
-2. **Kelola katalog**: pilih kategori → varian → ubah nama/harga/ketentuan, buka/tutup, atau arsipkan. Tambah varian lewat pilihan 6 pada daftar kategori; kode dibuat otomatis. Varian baru dan varian yang dipulihkan selalu tutup.
-3. **Percakapan buyer**: pilih buyer → Balas buyer → balas kartu tujuan dengan teks/gambar. Daftar menunjukkan aktivitas, bukan status dibaca.
-4. **Status bot & pengiriman**: koneksi WA/D1, jumlah antrean, serta pengiriman meragukan yang dapat dipilih untuk pemeriksaan dan konfirmasi kirim ulang.
+1. **Pesanan & pembayaran**: verifikasi, pesanan Diproses, pembatalan, refund, serta seluruh riwayat.
+2. **Kelola katalog**: pilih kategori → varian → ubah nama/harga/ketentuan, buka/tutup, arsip/pulihkan, atau tambah varian dengan kode otomatis.
+3. **Status bot & pengiriman**: koneksi WA/D1, antrean, dan pengiriman meragukan yang dapat dikirim ulang setelah pemeriksaan.
 
-Navigasi konsisten: **0 = kembali, 00 = beranda, 8/9 = halaman sebelumnya/berikutnya** jika tersedia. Maksimal lima item data per halaman. Pilihan dan draft kedaluwarsa setelah 30 menit tanpa aktivitas. `/batal` membatalkan isian saat ini dengan kembali satu langkah. Perintah pengelolaan lama seperti `/harga` dan `/setujui` tidak lagi mengeksekusi perubahan; bot menunjukkan jalur submenu penggantinya.
+Nomor pilihan mengikuti layar. Maksimal lima item data per halaman; menu tetap menampilkan tindakan serta navigasi setelah daftar. Pilihan dan draft kedaluwarsa setelah 30 menit. Tindakan kritis menampilkan konfirmasi, sedangkan penolakan bukti, pembatalan admin, dan awal refund meminta alasan. Data yang berubah sejak menu ditampilkan harus diperiksa ulang.
 
-Admin memilih order dari daftar, bukan mengetik ID. Persetujuan pembayaran, pembatalan, penyelesaian, serta refund melewati konfirmasi. Penolakan bukti, pembatalan, dan awal refund meminta alasan. Jika data berubah sejak menu ditampilkan, detail diperbarui dan tindakan harus dipilih ulang.
+Bukti pembayaran ada pada gambar notifikasi WA, bukan arsip database. Pilihan **Hubungi buyer** menampilkan link chat langsung. Balasan teks/gambar ke notifikasi, kartu tujuan lama, atau bukti pembayaran **tidak diteruskan**; bot menampilkan kontak langsung. Submenu Percakapan buyer dihapus. Perintah pengelolaan lama seperti `/harga` dan `/setujui` hanya memberi petunjuk menuju submenu.
 
-Untuk teks/gambar biasa, **balas notifikasi buyer atau kartu tujuan**. Balasan termasuk angka/OTP diteruskan sebagai chat; angka yang membalas pesan menu tetap menjadi navigasi. Pesan admin tanpa tujuan tidak diteruskan. Referensi tidak dikenali diarahkan ke Percakapan buyer. Bukti bayar berada di gambar notifikasi WA; menu tidak mengambil ulang gambar dari database.
-
-Semua varian awalnya **TUTUP**. Lengkapi durasi/ketentuan sebelum membuka penjualan. Arsip menyembunyikan varian dari katalog buyer dan menutup pembelian baru, sementara data order lama tetap utuh. API key belum punya paket awal; gunakan Tambah varian pada kategorinya.
+Varian baru dan varian hasil pemulihan arsip selalu tutup. Lengkapi ketentuan sebelum membuka penjualan. Arsip menyembunyikan varian dari buyer tanpa mengubah snapshot order lama.
 
 ### Mencoba checkout melalui chat nomor bot sendiri
 
-Buka WhatsApp akun bot, chat ke **nomornya sendiri**, lalu ketik `/menu`. Pesan yang kamu ketik sendiri diterima sebagai input buyer: pilih produk, varian, kuantitas, konfirmasi, `/done`, dan kirim bukti. Tidak ada prefix, flag `.env`, atau perintah mode test tambahan. Akses admin tetap dari nomor admin terpisah.
+Buka WhatsApp akun bot → chat ke nomornya sendiri → `/menu`. Pilihan produk, kuantitas, `/done`, dan foto bukti mengikuti alur buyer biasa tanpa prefix/flag khusus. Pesan otomatis bot dikecualikan agar tidak terjadi loop; pesan `fromMe` ke orang lain tidak menjadi input buyer. Akses admin tetap dari nomor admin terpisah.
 
-Pesan otomatis bot diberi ID sebelum pengiriman dan dikecualikan dari pemrosesan agar tidak terjadi loop. Pesan `fromMe` ke orang lain tidak diperlakukan sebagai input buyer. Order dari chat sendiri menggunakan data dan QRIS **asli**, bukan sandbox pembayaran. Tidak perlu mentransfer uang untuk menguji navigasi; verifikasi admin tetap manual.
+Order dan QRIS tersebut **asli**, bukan sandbox. Tidak perlu mentransfer uang untuk mencoba navigasi; persetujuan pembayaran tetap manual dan CLAIM baru dikirim setelah disetujui.
 
 ### Memperbarui instalasi yang sudah berjalan
 
-Jangan ubah `0001_init.sql` atau menghapus database/sesi. Dengan `database_id` dan secret yang sudah terkonfigurasi di laptop:
+Jika submenu admin versi sebelumnya sudah berjalan, perubahan CLAIM/tampilan ini **tidak memerlukan migrasi D1 atau deploy Worker baru**. Struktur database dan API tidak berubah. Jangan mengganti secret, menjalankan setup ulang, atau menghapus sesi WA.
 
-```sh
-npm run db:remote
-npm run worker:deploy
-```
+Setelah perubahan source di-commit/push, ambil kode di panel dengan `git pull`, hentikan proses bot lama, lalu jalankan ulang memakai **Node.js 26**. Periksa `/admin` dari WA admin dan `/menu` dari sisi buyer. Kode bot panel tidak diperbarui otomatis oleh deploy Worker.
 
-Ini menerapkan **0002_admin_ux.sql** dan menambahkan API admin. Deploy Worker sebelum memperbarui bot panel. `API_SECRET`, `DATA_KEY`, QRIS, serta nomor admin tetap memakai konfigurasi sebelumnya; tidak perlu menjalankan setup atau pairing ulang untuk update ini.
-
-Setelah perubahan source sudah di-commit/push, perbarui kode di panel dengan `git pull`, hentikan proses bot lama, lalu jalankan bot menggunakan Node.js 26. Ketik `/admin` dari WA admin untuk membuka menu baru. Konfigurasi lokal `worker/wrangler.local.jsonc` diabaikan Git. `worker/wrangler.jsonc` adalah template publik tanpa ID database; jangan mengisi ID di template tersebut.
+Saat startup pertama versi ini, antrean relay lama dinonaktifkan dan cache retry pesan lama dibersihkan. Auth WA, order, serta referensi pesan dipertahankan. Konfigurasi `worker/wrangler.local.jsonc` tetap lokal/diabaikan Git; `worker/wrangler.jsonc` tetap template tanpa ID database.
 
 ## 5. Pemulihan dan backup
 
-- Teks keluar disimpan terenkripsi maksimal 24 jam untuk antrean/retry. Konten tidak ditulis ke log. Referensi transaksi/pesan tanpa isi tersimpan di D1.
+- Teks transaksi/notifikasi keluar disimpan terenkripsi maksimal 24 jam untuk antrean/retry. Tidak ada relay chat atau OTP. Konten tidak ditulis ke log. Referensi transaksi/pesan tanpa isi tersimpan di D1.
 - Jika send sudah terjadi tetapi pemetaan D1 gagal, bot mencoba menyimpan pemetaan lagi tanpa mengirim ulang teks.
 - Jika hasil send tidak pasti atau proses berhenti di tengah send, bot menampilkannya melalui Admin → Status bot & pengiriman. Periksa chat tujuan sebelum mengonfirmasi kirim ulang; tidak ada jaminan kirim tepat sekali.
 - Media langsung tidak masuk antrean persisten. Jika gagal, buyer diminta mengirim ulang. Gambar dalam WA mengikuti ketersediaan riwayat WA, bukan backup bot.
@@ -167,6 +176,6 @@ npm run check
 npm test
 ```
 
-Tes mencakup Worker nyata dalam simulator D1, checkout kuantitas, idempotensi, persaingan satu order aktif, snapshot harga, pembayaran, refund/pembatalan, relay OTP, QRIS encode/decode, auth SQLite, retry, TTL, batas media, serta Express.
+Tes mencakup Worker nyata dalam simulator D1, checkout kuantitas, idempotensi, persaingan satu order aktif, snapshot harga, pembayaran, refund/pembatalan, CLAIM, pencegahan relay, penomoran dinamis, grid Unicode, QRIS encode/decode, auth SQLite, retry, TTL, batas media, serta Express.
 
-Sebelum membuka toko: scan QR hasil dengan dua aplikasi pembayaran dan pastikan merchant/nominal benar, lakukan pilot dua buyer bersamaan, verifikasi bukti di WA admin, uji OTP dua arah, restart panel, dan pastikan sesi tetap ada. Pairing WA, uji pembayaran nyata, serta kapasitas hosting memerlukan lingkungan/akun milik toko dan belum digantikan tes lokal.
+Sebelum membuka toko: scan QR hasil dengan dua aplikasi pembayaran dan pastikan merchant/nominal benar, lakukan pilot dua buyer bersamaan, verifikasi bukti di WA admin, uji link CLAIM dan chat langsung ke admin, restart panel, dan pastikan sesi tetap ada. Pairing WA, uji pembayaran nyata, serta kapasitas hosting memerlukan lingkungan/akun milik toko dan belum digantikan tes lokal.

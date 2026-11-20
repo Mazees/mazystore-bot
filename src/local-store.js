@@ -51,6 +51,18 @@ export class LocalStore {
   markSeen(id) { this.db.prepare('INSERT OR IGNORE INTO seen VALUES (?,?)').run(id, Date.now()); }
   markOutgoing(id) { this.markSeen(`outgoing:${id}`); }
   isOutgoing(id) { return this.hasSeen(`outgoing:${id}`); }
+  retireLegacyRelay() {
+    if (this.authGet('feature:direct-claim')) return;
+    this.transaction(() => {
+      const jobs = this.db.prepare("SELECT id,payload FROM outbox WHERE status IN ('pending','mapping','uncertain','sending')").all();
+      for (const job of jobs) {
+        const context = this.decrypt(job.payload).context;
+        if (context && context.kind !== 'menu' && context.purpose !== 'transaction') this.setStatus(job.id, 'retired');
+      }
+      this.db.prepare('DELETE FROM retry_messages').run();
+      this.authSet('feature:direct-claim', true);
+    });
+  }
   enqueue(id, jid, payload) {
     this.db.prepare('INSERT OR IGNORE INTO outbox(id,jid,payload,created) VALUES (?,?,?,?)').run(id, jid, this.encrypt(payload), Date.now());
   }
