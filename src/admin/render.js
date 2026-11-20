@@ -9,14 +9,14 @@ export function date(value) {
   const parsed = new Date(value.includes('T') ? value : value.replace(' ', 'T') + 'Z');
   return Number.isNaN(parsed.getTime()) ? 'Tidak diketahui' : new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta' }).format(parsed);
 }
-export const optionsText = options => options.map((o, i) => `${i + 1}. ${o.label}`).join('\n');
-export function screen(path, body, { page, hasNext = false, root = false, notice = '' } = {}) {
-  const navigation = [page > 0 ? '8. Halaman sebelumnya' : '', hasNext ? '9. Halaman berikutnya' : '', root ? '' : '0. Kembali\n00. Beranda'].filter(Boolean).join('\n');
-  return `┏━━━━━━━━━━━━━━━━━━━┓\n┃  *MAZY STORE | ADMIN*\n┗━━━━━━━━━━━━━━━━━━━┛\n\n*${path}*${notice ? `\n${notice}` : ''}\n\n${body}${page !== undefined ? `\n\nHalaman ${page + 1}` : ''}\n\n${navigation ? `${navigation}\n\n` : ''}Balas angka untuk memilih.`;
+export const optionsText = numbered;
+export function screen(path, body, { page, notice = '', options = [], input = false, root = false } = {}) {
+  return grid(root ? 'MAZY STORE · ADMIN' : path, [notice, body.replace(/\*/g, ''), page === undefined ? '' : `Halaman ${page + 1}`, options.length ? numbered(options) : '', input ? '/kembali: langkah sebelumnya\n/admin: beranda' : options.length ? 'Balas angka untuk memilih.' : 'Ketik /admin untuk beranda.']);
 }
 export function orderDetails(o) {
-  return `*${o.id}*\nBuyer: ${phone(o.buyer)}\nProduk: ${o.product}\nVarian: ${o.variant}\nJumlah: ${o.quantity}\nHarga satuan: ${money(o.unit_price)}\nTotal: *${money(o.total)}*\nDibuat: ${date(o.created_at)}\nStatus: ${statusLabels[o.status]}\n${o.cancel_requested ? '⚠ Ada permintaan pembatalan.\n' : ''}${o.status === 'review' ? `Bukti: ${o.proof_relay === 'sent' ? 'sudah diteruskan ke WA admin' : 'penerusan belum terkonfirmasi'}.\nCari gambar pada notifikasi nomor order ini.\n` : ''}`;
+  return `${o.id}\nBuyer: ${phone(o.buyer)}\nProduk: ${o.product}\nVarian: ${o.variant}\nJumlah: ${o.quantity}\nHarga satuan: ${money(o.unit_price)}\nTotal: ${money(o.total)}\nDibuat: ${date(o.created_at)}\nStatus: ${statusLabels[o.status]}\n${o.cancel_requested ? 'Ada permintaan pembatalan.\n' : ''}${o.status === 'review' ? `Bukti: ${o.proof_relay === 'sent' ? 'sudah diteruskan ke WA admin' : 'penerusan belum terkonfirmasi'}.\nCari gambar pada notifikasi nomor order ini.\n` : ''}`;
 }
 export function variantDetails(v) {
-  return `*${v.name}*\nHarga: *${money(v.price)}*\nStatus: ${v.archived ? '📁 Diarsipkan' : v.ready ? '🟢 Buka' : '⚪ Tutup'}\n\n*Durasi & ketentuan*\n${v.terms}`;
+  return `${v.name}\nHarga: ${money(v.price)}\nStatus: ${v.archived ? 'Diarsipkan' : v.ready ? 'Buka' : 'Tutup'}\n\nDurasi & ketentuan\n${v.terms}`;
 }
+import { grid, numbered } from '../ui.js';

@@ -10,12 +10,14 @@ import { StoreBot } from './bot.js';
 import { createApp } from './server.js';
 import { collectImage } from './media.js';
 import { resolveIncoming } from './incoming.js';
+import { grid } from './ui.js';
 
 const config = loadConfig();
 const logger = pino({ level: config.logLevel, redact: ['*.creds', '*.keys', '*.message', '*.text', '*.caption', '*.authorization'] });
 // Baileys diagnostics can include entire messages. Keep its logger silent; log lifecycle events below.
 const waLogger = pino({ level: 'silent' });
 const local = new LocalStore(config.dataDir, config.dataKey, BufferJSON);
+local.retireLegacyRelay();
 const api = new StoreApi(config.workerUrl, config.apiSecret);
 const auth = sqliteAuth(local);
 const transport = new Transport(local, api, config);
@@ -69,7 +71,8 @@ async function processMessage(m, sock) {
     const known = error.status && error.status < 500;
     const mediaError = error.message?.startsWith('Gambar terlalu besar');
     if (!known && !mediaError) { status.database = false; logger.warn('Permintaan gagal. Periksa koneksi WA/API; konten pesan tidak dicatat.'); }
-    await transport.text(jid, known || mediaError ? error.message : buyer === config.adminJid && !selfChat ? 'Permintaan admin belum berhasil. Ketik /admin untuk membuka ulang menu; periksa status order sebelum mengulang tindakan.' : 'Permintaan belum berhasil dipastikan. Periksa /pesanan sebelum mengulang. Jika gambar belum sampai ke admin, kirim ulang atau gunakan /chat.', `${seenId}:error`);
+    const errorText = known || mediaError ? error.message : buyer === config.adminJid && !selfChat ? 'Permintaan admin belum berhasil. Ketik /admin untuk membuka ulang menu; periksa status order sebelum mengulang tindakan.' : 'Permintaan belum berhasil dipastikan. Periksa /pesanan sebelum mengulang. Jika bukti bayar belum sampai ke admin, kirim ulang atau gunakan /chat untuk kontak langsung.';
+    await transport.text(jid, grid('MAZY STORE · INFO', [errorText]), `${seenId}:error`);
   } finally {
     local.markSeen(seenId);
   }

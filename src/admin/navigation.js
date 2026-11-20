@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { screen, optionsText, orderDetails, variantDetails, money, phone, date, statusLabels } from './render.js';
+import { screen, orderDetails, variantDetails, money, phone, date, statusLabels } from './render.js';
 import { orderActions, actionLabels, requiresReason, executeOrderAction, notifyOrderAction } from './actions.js';
+import { buyerContact, waLink } from '../contact.js';
+import { grid } from '../ui.js';
 
 const TTL = 30 * 60000;
+const UI_VERSION = 3;
 const legacy = new Set(['/produk','/tambahvarian','/ubahvarian','/harga','/ready','/order','/setujui','/tolakbukti','/selesai','/batalkan','/refund','/refundselesai','/lanjutkan','/balas','/gagalkirim','/ulang','/batalsetup']);
 const groupLabels = { all: 'Semua pesanan', review: 'Menunggu verifikasi', processing: 'Sedang diproses', cancellation: 'Permintaan pembatalan', refund: 'Refund', ...statusLabels };
 const locationKeys = ['screen','page','filter','categoryId','variantId','orderId','conversationId','archived','draft','step','pending','version','buyer','contactOrderId','back'];
@@ -10,8 +13,9 @@ const location = state => Object.fromEntries(locationKeys.filter(key => state[ke
 const child = (state, next) => ({ ...next, back: location(state) });
 
 export class AdminNavigation {
-  constructor(api, transport, local, runtime = () => ({})) {
+  constructor(api, transport, local, runtime = () => ({}), config = {}) {
     this.api = api; this.transport = transport; this.local = local; this.runtime = runtime;
+    this.adminNumber = config.adminNumber || config.adminJid?.split('@')[0];
   }
 
   async unavailable(message) {
@@ -30,36 +34,32 @@ export class AdminNavigation {
     const text = message.text.trim();
     const command = text.split(/\s+/)[0].toLowerCase();
     try {
-      if (['/admin','/menu','/start'].includes(command) || text === '00') return await this.show(ctx, { screen: 'home' });
+      if (['/admin','/menu','/start'].includes(command)) return await this.show(ctx, { screen: 'home' });
       if (message.quotedId) {
         let ref;
         try { ref = await this.api.message(owner.buyer, message.quotedId); }
         catch (error) {
           if (error.status !== 404) throw error;
-          return await ctx.send(message.jid, 'Tujuan balasan tidak dikenali. Buka /admin → Percakapan buyer, pilih buyer lalu Balas buyer.', null);
+          return await ctx.send(message.jid, grid('ADMIN · KONTAK', ['Referensi tidak dikenali. Tidak ada pesan yang diteruskan.', 'Buka /admin → Pesanan & pembayaran → pilih pesanan → Hubungi buyer.']), null);
         }
-        if (ref.kind !== 'menu') return await this.relay(ctx, ref);
-        if (!ctx.state || Date.now() - ctx.state.at > TTL) return await this.show(ctx, { screen: 'home' }, 'Pilihan dan draft lama sudah berakhir. Mulai dari sini.');
+        if (ref.kind !== 'menu') return await this.contact(ctx, ref.buyer, ref.order_id);
+        if (!ctx.state || ctx.state.uiVersion !== UI_VERSION || Date.now() - ctx.state.at > TTL) return await this.show(ctx, { screen: 'home' }, 'Menu diperbarui atau sesi berakhir. Mulai dari sini.');
         if (ref.menu_token !== ctx.state.token) return await this.show(ctx, ctx.state, 'Menu yang dibalas sudah lama. Pilih dari menu terbaru.');
       }
       if (legacy.has(command)) {
-        const target = ['/produk','/tambahvarian','/ubahvarian','/harga','/ready','/batalsetup'].includes(command) ? 'Kelola katalog' : command === '/balas' ? 'Percakapan buyer' : ['/gagalkirim','/ulang'].includes(command) ? 'Status bot & pengiriman' : 'Pesanan & pembayaran';
-        const view = ctx.state && Date.now() - ctx.state.at <= TTL ? ctx.state : { screen: 'home' };
+        const target = ['/produk','/tambahvarian','/ubahvarian','/harga','/ready','/batalsetup'].includes(command) ? 'Kelola katalog' : ['/gagalkirim','/ulang'].includes(command) ? 'Status bot & pengiriman' : 'Pesanan & pembayaran';
+        const view = ctx.state?.uiVersion === UI_VERSION && Date.now() - ctx.state.at <= TTL ? ctx.state : { screen: 'home' };
         return await this.show(ctx, view, `Perintah lama tidak dijalankan. Buka /admin → ${target}.`);
       }
-      if (!ctx.state || Date.now() - ctx.state.at > TTL) return await this.show(ctx, { screen: 'home' }, 'Pilihan dan draft lama sudah berakhir. Mulai dari sini.');
-      if (text === '0' || command === '/batal') return await this.show(ctx, ctx.state.back || { screen: 'home' });
-      if (message.image) return await this.show(ctx, ctx.state, 'Untuk mengirim gambar, balas pesan buyer atau kartu tujuan.');
+      if (!ctx.state || ctx.state.uiVersion !== UI_VERSION || Date.now() - ctx.state.at > TTL) return await this.show(ctx, { screen: 'home' }, 'Pilihan dan draft lama sudah berakhir. Mulai dari sini.');
+      if (command === '/kembali' || command === '/batal') return await this.show(ctx, ctx.state.back || { screen: 'home' });
+      if (message.image) return await this.show(ctx, ctx.state, 'Gambar dan pesan dikirim langsung melalui WA buyer, bukan bot.');
       if (ctx.state.screen === 'input') return await this.input(ctx, text, event);
       if (ctx.state.screen === 'add') return await this.addInput(ctx, text);
-      if ((text === '8' && ctx.state.page > 0) || (text === '9' && ctx.state.hasNext)) {
-        return await this.show(ctx, { ...location(ctx.state), page: ctx.state.page + (text === '9' ? 1 : -1) });
-      }
       const option = ctx.state.options?.[text];
       if (!option) return await this.show(ctx, ctx.state, 'Pilihan tidak valid. Gunakan angka yang ditampilkan.');
       return await this.select(ctx, option, event);
     } catch (error) {
-      if (error.message?.startsWith('Gambar terlalu besar')) return ctx.send(message.jid, `${error.message}\nBalas kembali kartu buyer dengan foto yang lebih kecil.`, null);
       if (error.status === 409) {
         const s = ctx.state;
         const target = s?.orderId ? { screen: 'order', orderId: s.orderId, back: { screen: 'orders', filter: 'all', page: 0 } } : s?.variantId ? { screen: 'variant', variantId: s.variantId, categoryId: s.categoryId, back: { screen: 'variants', categoryId: s.categoryId, page: 0 } } : { screen: 'home' };
@@ -70,30 +70,21 @@ export class AdminNavigation {
     }
   }
 
-  async relay(ctx, ref) {
-    const target = await this.api.customer(ref.buyer);
-    await this.api.session(ref.buyer, { ...target.session, chat: true, chatOrderId: ref.order_id || null });
-    const context = { buyer: ref.buyer, orderId: ref.order_id, role: 'admin', kind: 'relay' };
-    if (ctx.message.image) await this.transport.image(ref.buyer, await ctx.message.image(), `*Admin Mazy Store*${ctx.message.text ? `\n\n${ctx.message.text}` : ''}`, context);
-    else if (ctx.message.text) await ctx.send(ref.buyer, `*Admin Mazy Store*\n\n${ctx.message.text}`, context);
-    else return;
-    if (ctx.state && Date.now() - ctx.state.at <= TTL) await ctx.save({ ...ctx.state, at: Date.now() });
-    await ctx.send(ctx.message.jid, `Balasan untuk ${phone(ref.buyer)} ${ctx.message.image ? 'berhasil diteruskan' : 'masuk antrean'}.`, null);
-  }
-
-  async card(ctx, buyer, orderId = null) {
-    const target = await this.api.customer(buyer);
-    await ctx.send(ctx.message.jid, `*BALAS BUYER*\nNomor: ${phone(buyer)}\nPercakapan: ${target.conversation_id}\n${orderId ? `Order: ${orderId}` : 'Bantuan umum'}\n\n*Balas pesan ini* dengan teks atau gambar.\nAngka dan OTP pada balasan diteruskan sebagai chat, bukan pilihan menu.`, { buyer, orderId, role: 'buyer', kind: 'card' });
-    await ctx.save({ ...ctx.state, at: Date.now() });
+  async contact(ctx, buyer, orderId = null) {
+    const content = orderId
+      ? buyerContact(await this.api.order(orderId))
+      : grid('ADMIN · HUBUNGI BUYER', [`Nomor: ${phone(buyer)}`, 'Klik link untuk chat langsung. Pesan dan gambar tidak diteruskan oleh bot.']) + '\n\n' + waLink(buyer, 'Halo, saya admin Mazy Store.');
+    await ctx.send(ctx.message.jid, content, null);
   }
 
   async show(ctx, view, notice = '') {
-    const s = { ...view, at: Date.now(), token: randomUUID(), options: {}, hasNext: false };
+    const s = { ...view, uiVersion: UI_VERSION, at: Date.now(), token: randomUUID(), options: {}, hasNext: false };
+    const menu = [];
     let path = 'Admin';
     let body;
     const choices = entries => {
-      entries.forEach((o, i) => { s.options[String(i + 1)] = o; });
-      return optionsText(entries);
+      menu.push(...entries);
+      return '';
     };
     const list = (items, label, type) => choices(items.map(item => ({ id: item.id || item.conversation_id, type, label: label(item) })));
     if (s.screen === 'home') {
@@ -101,7 +92,6 @@ export class AdminNavigation {
       body = `*PERLU DITANGANI*\nPembayaran: *${summary.review}* menunggu verifikasi\nPembatalan: *${summary.cancellations}* permintaan\nSedang diproses: *${summary.processing}* pesanan\n\n${choices([
         { type: 'go', screen: 'orderGroups', label: 'Pesanan & pembayaran' },
         { type: 'go', screen: 'categories', page: 0, label: 'Kelola katalog' },
-        { type: 'go', screen: 'conversations', page: 0, label: 'Percakapan buyer' },
         { type: 'go', screen: 'system', label: 'Status bot & pengiriman' },
       ])}`;
     } else if (s.screen === 'orderGroups') {
@@ -120,7 +110,8 @@ export class AdminNavigation {
       path += ` › Pesanan › ${groupLabels[s.filter]}`;
       const page = await this.api.adminOrders(s.filter, s.page || 0);
       s.hasNext = page.hasNext;
-      body = list(page.items, o => `${phone(o.buyer)} · ${money(o.total)}\n   ${o.product} — ${o.variant}\n   ${o.id} · ${statusLabels[o.status]}`, 'order') || 'Belum ada pesanan pada daftar ini.';
+      list(page.items, o => `${phone(o.buyer)} · ${money(o.total)}\n${o.product} — ${o.variant}\n${o.id} · ${statusLabels[o.status]}`, 'order');
+      body = page.items.length ? '' : 'Belum ada pesanan pada daftar ini.';
     } else if (s.screen === 'order') {
       const order = await this.api.order(s.orderId);
       s.version = order.version;
@@ -133,17 +124,16 @@ export class AdminNavigation {
       if (s.screen === 'categories') {
         const rows = categories.slice(s.page * 5, s.page * 5 + 5);
         s.hasNext = (s.page + 1) * 5 < categories.length;
-        body = list(rows, c => `${c.name}\n   ${variants.filter(v => v.category_id === c.id && !v.archived).length} varian aktif`, 'category');
+        body = list(rows, c => `${c.name} (${variants.filter(v => v.category_id === c.id && !v.archived).length})`, 'category');
       } else if (s.screen === 'variants') {
         if (!category) throw Object.assign(new Error('Kategori tidak ditemukan.'), { status: 404 });
-        path += ` › ${category.name}${s.archived ? ' › Arsip' : ''}`;
+        path = `${category.name} (${variants.filter(v => v.category_id === s.categoryId && !v.archived).length})${s.archived ? ' › Arsip' : ''}`;
         const rows = variants.filter(v => v.category_id === s.categoryId && Boolean(v.archived) === Boolean(s.archived));
         s.hasNext = (s.page + 1) * 5 < rows.length;
-        body = list(rows.slice(s.page * 5, s.page * 5 + 5), v => `${v.ready ? '🟢' : '⚪'} ${v.name} · ${money(v.price)}`, 'variant') || (s.archived ? 'Arsip kategori ini kosong.' : 'Belum ada varian. Tambahkan paket pertamamu.');
+        list(rows.slice(s.page * 5, s.page * 5 + 5), v => `${v.name} · ${money(v.price)}\nStatus: ${v.ready ? 'Buka' : 'Tutup'}`, 'variant');
+        body = rows.length ? '' : (s.archived ? 'Arsip kategori ini kosong.' : 'Belum ada varian.');
         if (!s.archived) {
-          s.options['6'] = { type: 'addVariant', label: 'Tambah varian' };
-          s.options['7'] = { type: 'archives', label: 'Lihat arsip' };
-          body += '\n\n6. Tambah varian\n7. Lihat arsip';
+          choices([{ type: 'addVariant', label: 'Tambah varian' }, { type: 'archives', label: 'Lihat arsip' }]);
         }
       } else {
         const variant = variants.find(v => v.id === s.variantId);
@@ -177,17 +167,6 @@ export class AdminNavigation {
         body = `${variantDetails(v)}\n\n*Perubahan:* ${s.pending.label}${s.pending.value !== undefined ? `\n${s.pending.field === 'price' ? money(s.pending.value) : s.pending.value}` : ''}`;
       }
       body += `\n\n${choices([{ type: 'execute', label: 'Ya, lanjutkan' }])}`;
-    } else if (s.screen === 'conversations') {
-      path += ' › Percakapan buyer';
-      const page = await this.api.adminConversations(s.page || 0);
-      s.hasNext = page.hasNext;
-      body = list(page.items, c => `${phone(c.buyer)}\n   Aktivitas: ${date(c.last_contact_at)}`, 'conversation') || 'Belum ada percakapan buyer.';
-    } else if (s.screen === 'conversation') {
-      path += ' › Percakapan › Detail';
-      const buyer = await this.api.conversation(s.conversationId);
-      s.buyer = buyer.buyer;
-      s.contactOrderId = buyer.order?.id || null;
-      body = `Buyer: ${phone(buyer.buyer)}\nAktivitas: ${date(buyer.last_contact_at)}\n${buyer.order ? `\n${orderDetails(buyer.order)}` : '\nTidak ada order aktif.'}\n\n${choices([{ type: 'card', label: 'Balas buyer' }])}`;
     } else if (s.screen === 'system') {
       path += ' › Status bot & pengiriman';
       await this.api.adminSummary();
@@ -198,15 +177,26 @@ export class AdminNavigation {
       path += ' › Pengiriman › Perlu diperiksa';
       const page = this.local.uncertainPage(s.page || 0);
       s.hasNext = page.hasNext;
-      body = list(page.items, job => `${phone(job.jid)}\n   ${date(new Date(job.created).toISOString())}`, 'retry') || 'Tidak ada pengiriman meragukan.';
+      list(page.items, job => `${phone(job.jid)}\n${date(new Date(job.created).toISOString())}`, 'retry');
+      body = page.items.length ? '' : 'Tidak ada pengiriman meragukan.';
     }
     if (body === undefined) return this.show(ctx, { screen: 'home' });
+    const input = s.screen === 'input' || s.screen === 'add';
+    if (!input) {
+      if (s.page > 0) menu.push({ type: 'page', delta: -1, label: 'Halaman sebelumnya' });
+      if (s.hasNext) menu.push({ type: 'page', delta: 1, label: 'Halaman berikutnya' });
+      if (s.screen !== 'home') menu.push({ type: 'back', label: 'Kembali' }, { type: 'home', label: 'Beranda' });
+    }
+    s.options = Object.fromEntries(menu.map((option, index) => [String(index + 1), option]));
     await ctx.save(s);
-    await ctx.send(ctx.message.jid, screen(path, body, { page: s.page, hasNext: s.hasNext, root: s.screen === 'home', notice }), { buyer: ctx.owner.buyer, role: 'admin', kind: 'menu', menuToken: s.token });
+    await ctx.send(ctx.message.jid, screen(path, body.trim(), { page: s.page, root: s.screen === 'home', notice, input, options: menu }), { buyer: ctx.owner.buyer, role: 'admin', kind: 'menu', menuToken: s.token });
   }
 
   async select(ctx, option, event) {
     const s = ctx.state;
+    if (option.type === 'back') return this.show(ctx, s.back || { screen: 'home' });
+    if (option.type === 'home') return this.show(ctx, { screen: 'home' });
+    if (option.type === 'page') return this.show(ctx, { ...location(s), page: (s.page || 0) + option.delta });
     if (option.type === 'go') {
       const { type, label, ...next } = option;
       return this.show(ctx, child(s, next));
@@ -216,13 +206,11 @@ export class AdminNavigation {
     if (option.type === 'category') return this.show(ctx, child(s, { screen: 'variants', categoryId: option.id, page: 0 }));
     if (option.type === 'variant') return this.show(ctx, child(s, { screen: 'variant', categoryId: s.categoryId, variantId: option.id }));
     if (option.type === 'archives') return this.show(ctx, child(s, { screen: 'variants', categoryId: s.categoryId, archived: true, page: 0 }));
-    if (option.type === 'conversation') return this.show(ctx, child(s, { screen: 'conversation', conversationId: option.id }));
-    if (option.type === 'card') return this.card(ctx, s.buyer, s.contactOrderId);
     if (option.type === 'orderAction') {
       const order = await this.api.order(s.orderId);
       if (order.version !== s.version) return this.show(ctx, location(s), 'Order berubah. Pilih lagi dari detail terbaru.');
       if (!orderActions(order).some(a => a.id === option.id)) return this.show(ctx, location(s), 'Tindakan tidak lagi tersedia.');
-      if (option.id === 'contact') return this.card(ctx, order.buyer, order.id);
+      if (option.id === 'contact') return this.contact(ctx, order.buyer, order.id);
       const pending = { kind: 'order', action: option.id, version: order.version, key: `${event}:order:${option.id}` };
       return this.show(ctx, child(s, { screen: requiresReason(option.id) ? 'input' : 'confirm', orderId: order.id, pending }));
     }
@@ -278,7 +266,7 @@ export class AdminNavigation {
       const before = await this.api.order(s.orderId);
       if (before.version !== pending.version) return this.show(ctx, { screen: 'order', orderId: before.id, back: { screen: 'orders', filter: 'all', page: 0 } }, 'Order berubah. Pilih ulang tindakan.');
       const updated = await executeOrderAction(this.api, before, pending);
-      await notifyOrderAction(this.api, updated, pending, ctx.send);
+      await notifyOrderAction(updated, pending, ctx.send, this.adminNumber);
       return this.show(ctx, { screen: 'order', orderId: updated.id, back: { screen: 'orders', filter: 'all', page: 0 } }, '✓ Perubahan tersimpan dan pemberitahuan buyer masuk antrean.');
     }
     if (pending.kind === 'add') {
