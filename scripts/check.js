@@ -2,7 +2,12 @@ import { readdir } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
 async function files(dir) {
-  const entries = await readdir(dir, { withFileTypes: true });
+  let entries;
+  try { entries = await readdir(dir, { withFileTypes: true }); }
+  catch (error) {
+    if (dir === 'test' && error.code === 'ENOENT') return [];
+    throw error;
+  }
   return (await Promise.all(entries.map(e => e.isDirectory() ? files(`${dir}/${e.name}`) : e.name.endsWith('.js') ? [`${dir}/${e.name}`] : []))).flat();
 }
 let failed = false;
