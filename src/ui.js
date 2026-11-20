@@ -30,15 +30,15 @@ export function wrapText(value, width = GRID_WIDTH - 2) {
   return output;
 }
 
-export function grid(title, sections = []) {
+export function grid(title, sections = [], width = GRID_WIDTH) {
   const groups = [title, ...sections].filter(section => section !== '' && section !== undefined && section !== null);
   const row = line => line ? `│ ${line}` : '│';
-  const lines = [`┌${'─'.repeat(GRID_WIDTH)}`];
+  const lines = [`┌${'─'.repeat(width)}`];
   groups.forEach((section, index) => {
-    if (index) lines.push(`├${'─'.repeat(GRID_WIDTH)}`);
-    lines.push(...wrapText(section).map(row));
+    if (index) lines.push(`├${'─'.repeat(width)}`);
+    lines.push(...wrapText(section, width - 2).map(row));
   });
-  lines.push(`└${'─'.repeat(GRID_WIDTH)}`);
+  lines.push(`└${'─'.repeat(width)}`);
   return '```\n' + lines.join('\n') + '\n```';
 }
 

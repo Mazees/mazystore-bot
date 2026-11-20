@@ -9,9 +9,9 @@ export function orderActions(order) {
     if (!order.cancel_requested) choices.push({ id: 'approve', label: 'Setujui pembayaran' });
     choices.push({ id: 'reject_proof', label: 'Minta bukti ulang' });
   }
-  if (order.status === 'processing') choices.push({ id: 'complete', label: 'Tandai seluruh pesanan selesai' }, { id: 'refund', label: 'Mulai refund' });
+  if (order.status === 'processing') choices.push({ id: 'complete', label: 'Tandai pesanan selesai' }, { id: 'refund', label: 'Mulai refund' });
   if (['awaiting_payment','awaiting_proof','review'].includes(order.status)) choices.push({ id: 'cancel', label: 'Batalkan pesanan' });
-  if (order.status === 'refund_pending') choices.push({ id: 'refund_complete', label: 'Konfirmasi uang refund dikembalikan' });
+  if (order.status === 'refund_pending') choices.push({ id: 'refund_complete', label: 'Tandai uang refund dikembalikan' });
   choices.push({ id: 'contact', label: 'Hubungi buyer' });
   return choices;
 }

@@ -2,7 +2,7 @@
 
 Bot WhatsApp untuk reseller produk AI: Node.js 26 LTS, Express 5, Baileys, Cloudflare Worker + D1, dan SQLite lokal untuk sesi WA. Semua kode aplikasi menggunakan JavaScript ES Modules.
 
-Alur buyer: **pilih produk → varian → kuantitas → konfirmasi → bayar QR sesuai nominal → `/done` → kirim foto bukti → admin menyetujui → CLAIM langsung ke WA admin → barang diserahkan → admin menandai Selesai**.
+Alur buyer: **pilih produk → varian → kuantitas → bayar QR sesuai nominal → `/done` → kirim foto bukti → admin menyetujui → CLAIM langsung ke WA admin → barang diserahkan → admin menandai Selesai**.
 
 ## Pembagian aplikasi
 
@@ -86,7 +86,7 @@ Pastikan `/home/container`/folder project tetap tersimpan setelah restart. Panel
 
 ### Tampilan bersama buyer dan admin
 
-Menu buyer/admin, detail order, konfirmasi, pembayaran, dan CLAIM memakai frame monospace dengan garis kiri, atas, pemisah, dan bawah saja. Tidak ada garis kanan atau spasi pengisi di ujung baris. Teks panjang tetap dibungkus otomatis, termasuk Unicode. Link WhatsApp berada di luar frame supaya mudah diklik. Pesan panjang dipecah menjadi beberapa frame.
+Caption gambar bukti/QRIS memakai frame 22 kolom agar garis tidak terlipat pada bubble foto. Menu buyer/admin, detail order, pembayaran, dan CLAIM memakai frame monospace dengan garis kiri, atas, pemisah, dan bawah saja. Tidak ada garis kanan atau spasi pengisi di ujung baris. Teks panjang tetap dibungkus otomatis, termasuk Unicode. Link WhatsApp berada di luar frame supaya mudah diklik. Pesan panjang dipecah menjadi beberapa frame.
 
 Semua pilihan memakai **1, 2, 3, ... sesuai urutan layar**, termasuk Kembali, Beranda, dan pindah halaman. Tidak ada nomor navigasi khusus 0, 00, 6/7, atau 8/9. Saat mengisi nama, harga, alasan, atau kuantitas, gunakan `/kembali`; angka adalah data, bukan navigasi. `/admin` membuka beranda admin dan `/menu` membuka katalog buyer (atau beranda jika pengirim adalah admin).
 
@@ -103,7 +103,7 @@ Jumlah varian nonarsip hanya ditampilkan pada menu admin di samping kategori, mi
 | `/chat` | Link WA pribadi admin; tidak mengaktifkan relay |
 | `/kembali` | Kembali dari isian ke langkah sebelumnya |
 
-Jumlah 1–100 per order (bisa diturunkan melalui `MAX_QUANTITY`). Satu buyer satu order aktif; tidak ada kedaluwarsa otomatis. Harga dan ketentuan disalin ke order. Perubahan harga/ketentuan sebelum konfirmasi meminta buyer memeriksa ringkasan baru.
+Jumlah 1–100 per order (bisa diturunkan melalui `MAX_QUANTITY`). Satu buyer satu order aktif; tidak ada kedaluwarsa otomatis. Harga dan ketentuan disalin ke order. Setelah buyer mengisi kuantitas, order dan QR pembayaran langsung dibuat. Jika harga/ketentuan berubah dari yang terakhir ditampilkan, buyer mendapat rincian terbaru dan diminta mengisi ulang jumlah.
 
 Setelah admin memeriksa uang masuk dan menyetujui pembayaran, status menjadi **Diproses** dan buyer menerima link `wa.me` menuju `ADMIN_NUMBER` dengan pesan:
 
@@ -123,21 +123,35 @@ Ketik **`/admin` atau `/menu`** dari nomor `ADMIN_NUMBER`:
 1. **Pesanan & pembayaran**: verifikasi, pesanan Diproses, pembatalan, refund, serta seluruh riwayat.
 2. **Kelola katalog**: pilih Tambah katalog untuk membuat kategori produk baru, atau pilih katalog yang ada → varian → ubah nama/harga/ketentuan, buka/tutup, arsip/pulihkan, atau tambah varian dengan kode otomatis.
 3. **Status bot & pengiriman**: koneksi WA/D1, antrean, dan pengiriman meragukan yang dapat dikirim ulang setelah pemeriksaan.
-4. **Broadcast pelanggan**: tulis pesan teks, periksa pratinjau dan jumlah penerima, lalu konfirmasi. Penerima adalah pelanggan yang tercatat di D1; nomor admin dan bot dikecualikan. Tidak mengimpor riwayat chat WhatsApp lama.
+4. **Broadcast pelanggan**: tulis pesan teks; setelah dikirim, pesan langsung masuk antrean tanpa konfirmasi tambahan. Penerima adalah pelanggan yang tercatat di D1; nomor admin dan bot dikecualikan. Tidak mengimpor riwayat chat WhatsApp lama.
 
-Broadcast memakai antrean SQLite yang sama, dengan jeda minimal 5 detik antarpercobaan kirim selama bot berjalan. Pesan transaksi didahulukan. Menu broadcast menampilkan antrean, kiriman yang diterima WA (bukan dibaca), serta hasil meragukan. Sisa antrean dapat dihentikan setelah konfirmasi; kiriman yang sudah/sedang dikirim tidak ditarik. Antrean tersimpan saat restart. Pesan meragukan tidak otomatis dikirim ulang; periksa melalui Status bot & pengiriman. Broadcast mendukung teks maksimal 2000 karakter; gambar dan penjadwalan belum tersedia. Jeda pengiriman tidak menjamin akun bebas pembatasan WhatsApp.
+Broadcast memakai antrean SQLite yang sama, dengan jeda minimal 5 detik antarpercobaan kirim selama bot berjalan. Pesan transaksi didahulukan. Menu broadcast menampilkan antrean, kiriman yang diterima WA (bukan dibaca), serta hasil meragukan. Sisa antrean dapat dihentikan langsung; kiriman yang sudah/sedang dikirim tidak ditarik. Antrean tersimpan saat restart. Pesan meragukan tidak otomatis dikirim ulang; periksa melalui Status bot & pengiriman. Broadcast mendukung teks maksimal 2000 karakter; gambar dan penjadwalan belum tersedia. Jeda pengiriman tidak menjamin akun bebas pembatasan WhatsApp.
 
-Nomor pilihan mengikuti layar. Maksimal lima item data per halaman; menu tetap menampilkan tindakan serta navigasi setelah daftar. Pilihan dan draft kedaluwarsa setelah 30 menit. Tindakan kritis menampilkan konfirmasi, sedangkan penolakan bukti, pembatalan admin, dan awal refund meminta alasan. Data yang berubah sejak menu ditampilkan harus diperiksa ulang.
+Nomor pilihan mengikuti layar. Maksimal lima item data per halaman; menu tetap menampilkan tindakan serta navigasi setelah daftar. Pilihan dan draft kedaluwarsa setelah 30 menit. Tindakan langsung dijalankan setelah dipilih, tanpa layar konfirmasi. Penolakan bukti, pembatalan admin, dan awal refund tetap meminta alasan; setelah alasan dikirim, tindakan langsung dijalankan. Data yang berubah sejak menu ditampilkan harus diperiksa ulang.
 
-Jika terjadi error, `ADMIN_INTERNAL` berarti kegagalan kode menu, `API_NETWORK` berarti koneksi/timeout Worker, `API_RESPONSE` berarti respons tidak sesuai (misalnya URL salah), dan `API_HTTP` menampilkan status penolakan/gangguan Worker. Console mencatat kode, jenis error, layar, dan lokasi source tanpa isi pesan atau secret. Periksa status order sebelum mengulangi konfirmasi. Request baca serta pembuatan/tindakan order dengan kunci idempotensi mencoba ulang satu kali saat gangguan koneksi/5xx; perubahan katalog tidak diulang otomatis.
+Jika terjadi error, `ADMIN_INTERNAL` berarti kegagalan kode menu, `API_NETWORK` berarti koneksi/timeout Worker, `API_RESPONSE` berarti respons tidak sesuai (misalnya URL salah), dan `API_HTTP` menampilkan status penolakan/gangguan Worker. Console mencatat kode, jenis error, layar, dan lokasi source tanpa isi pesan atau secret. Periksa status order sebelum mengulangi tindakan. Request baca serta pembuatan/tindakan order dengan kunci idempotensi mencoba ulang satu kali saat gangguan koneksi/5xx; perubahan katalog tidak diulang otomatis.
+
+Shortcut admin: **reply notifikasi order, pemberitahuan /done, foto bukti, atau hasil tindakan order** dengan perintah berikut. ID diambil dari referensi pesan, tidak dari teks/nomor menu. Shortcut tidak mengubah posisi submenu atau draft admin.
+
+| Reply dengan | Tindakan |
+|---|---|
+| /setujui | Setujui pembayaran yang sedang diverifikasi; kirim CLAIM |
+| /selesaikan | Selesaikan hanya ID tersebut setelah status Diproses |
+| /tolakbukti alasan | Minta buyer mengirim bukti ulang |
+| /batalkan alasan | Batalkan order yang belum disetujui |
+| /refund alasan | Mulai refund untuk order berbayar |
+| /refundselesai | Tandai uang refund sudah dikembalikan |
+| /lanjutkan | Tutup permintaan pembatalan sesuai kesepakatan |
+
+Periksa uang masuk sebelum /setujui. Pesan tanpa referensi order, reply ke menu, dan tindakan yang tidak sesuai status ditolak. /selesai juga tersedia sebagai alias /selesaikan. Lima order dapat diproses dengan reply ke masing-masing pesannya; tidak ada penyelesaian massal. Referensi lokal dapat dipakai saat pencatatan pesan ke D1 masih mengantre.
 
 Bukti pembayaran ada pada gambar notifikasi WA, bukan arsip database. Pilihan **Hubungi buyer** menampilkan link chat langsung. Balasan teks/gambar ke notifikasi, kartu tujuan lama, atau bukti pembayaran **tidak diteruskan**; bot menampilkan kontak langsung. Submenu Percakapan buyer dihapus. Perintah pengelolaan lama seperti `/harga` dan `/setujui` hanya memberi petunjuk menuju submenu.
 
 Status varian adalah **Ready / Kosong**. Varian baru dan varian hasil pemulihan arsip selalu Kosong. Lengkapi ketentuan sebelum menandainya Ready. Arsip varian menyembunyikannya dari buyer tanpa mengubah snapshot order lama.
 
-**Menambah produk/katalog utama:** `/admin` → Kelola katalog → Tambah katalog → ketik nama → konfirmasi. Nama maksimal 80 karakter; spasi dirapikan dan huruf disimpan kapital. Nama yang sudah ada ditolak. Setelah disimpan, kamu langsung masuk ke katalog baru dengan pilihan Tambah varian. Katalog baru otomatis muncul pada buyer sebagai Belum tersedia sampai ada varian yang dibuka. Katalog tidak lagi terbatas pada tujuh kategori awal; penambahan katalog tidak membuat atau membuka varian otomatis. `/kembali` membatalkan langkah isian tanpa menambah data.
+**Menambah produk/katalog utama:** `/admin` → Kelola katalog → Tambah katalog → ketik nama. Nama maksimal 80 karakter; spasi dirapikan dan huruf disimpan kapital. Nama yang sudah ada ditolak. Setelah disimpan, kamu langsung masuk ke katalog baru dengan pilihan Tambah varian. Katalog baru otomatis muncul pada buyer sebagai Belum tersedia sampai ada varian yang dibuka. Katalog tidak lagi terbatas pada tujuh kategori awal; penambahan katalog tidak membuat atau membuka varian otomatis. `/kembali` membatalkan langkah isian tanpa menambah data.
 
-**Ubah/hapus katalog:** pilih katalog pada Kelola katalog → Ubah nama katalog atau Hapus katalog → konfirmasi. Hapus menghilangkan katalog dan seluruh variannya dari admin/buyer serta menolak pembelian baru. Tidak ada menu arsip/pulihkan katalog. Pesanan yang sudah dibuat mempertahankan nama dan rincian saat pembelian serta tetap dapat diselesaikan. Nama katalog yang sudah dihapus boleh dipakai untuk katalog baru.
+**Ubah/hapus katalog:** pilih katalog pada Kelola katalog → Ubah nama katalog (ketik nama baru) atau Hapus katalog (langsung dihapus). Hapus menghilangkan katalog dan seluruh variannya dari admin/buyer serta menolak pembelian baru. Tidak ada menu arsip/pulihkan katalog. Pesanan yang sudah dibuat mempertahankan nama dan rincian saat pembelian serta tetap dapat diselesaikan. Nama katalog yang sudah dihapus boleh dipakai untuk katalog baru.
 
 ### Mencoba checkout melalui chat nomor bot sendiri
 

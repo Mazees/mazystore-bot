@@ -73,6 +73,11 @@ export class LocalStore {
   setStatus(id, status, waId = null) {
     this.db.prepare('UPDATE outbox SET status=?,wa_id=COALESCE(?,wa_id) WHERE id=?').run(status, waId, id);
   }
+  messageReference(jid, waId) {
+    const row = this.db.prepare('SELECT payload FROM outbox WHERE jid=? AND wa_id=? LIMIT 1').get(jid, waId);
+    const context = row ? this.decrypt(row.payload).context : null;
+    return context ? { buyer: context.buyer, order_id: context.orderId, kind: context.kind || 'relay' } : null;
+  }
   uncertain() { return this.db.prepare("SELECT id,jid,created,status FROM outbox WHERE status='uncertain' ORDER BY created LIMIT 30").all(); }
   outboxSummary() {
     return this.db.prepare("SELECT COALESCE(SUM(status IN ('pending','broadcast','mapping','sending')),0) AS pending,COALESCE(SUM(status='uncertain'),0) AS uncertain FROM outbox").get();

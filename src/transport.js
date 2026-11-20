@@ -20,7 +20,7 @@ export class Transport {
     const { createHash } = await import('node:crypto');
     const version = createHash('sha256').update(this.config.qris).digest('hex');
     if (order.qris_version !== version) throw new Error('QRIS order berbeda dari konfigurasi sekarang. Hubungi admin.');
-    this.store.enqueue(id, jid, { kind: 'qris', total: order.total, caption: grid('MAZY STORE · PEMBAYARAN', [`ID: ${order.id}\nMerchant: ${this.config.merchant}\nTotal: Rp${order.total.toLocaleString('id-ID')}`, 'Setelah membayar, ketik /done lalu kirim foto bukti pembayaran.', '/batal: batalkan pesanan']), context: null });
+    this.store.enqueue(id, jid, { kind: 'qris', total: order.total, caption: grid('MAZY STORE · PEMBAYARAN', [`ID: ${order.id}\nMerchant: ${this.config.merchant}\nTotal: Rp${order.total.toLocaleString('id-ID')}`, 'Setelah membayar, ketik /done lalu kirim foto bukti pembayaran.', '/batal: batalkan pesanan'], 22), context: null });
   }
   async image(jid, buffer, caption, context = null) {
     if (!this.socket) throw new Error('WhatsApp belum tersambung.');
