@@ -71,12 +71,14 @@ export class AdminNavigation {
       if (message.image) return await this.show(ctx, ctx.state, 'Gambar dan pesan dikirim langsung melalui WA buyer, bukan bot.');
       if (ctx.state.screen === 'input') return await this.input(ctx, text, event);
       if (ctx.state.screen === 'add') return await this.addInput(ctx, text);
+      if (ctx.state.screen === 'addCategory') return await this.categoryInput(ctx, text);
       const option = ctx.state.options?.[text];
       if (!option) return await this.show(ctx, ctx.state, 'Pilihan tidak valid. Gunakan angka yang ditampilkan.');
       return await this.select(ctx, option, event);
     } catch (error) {
       if (error.status === 409) {
         const s = ctx.state;
+        if (s?.pending?.kind === 'category') return this.show(ctx, s.back || { screen: 'categories', page: 0 }, error.message);
         const target = s?.orderId ? { screen: 'order', orderId: s.orderId, back: { screen: 'orders', filter: 'all', page: 0 } } : s?.variantId ? { screen: 'variant', variantId: s.variantId, categoryId: s.categoryId, back: { screen: 'variants', categoryId: s.categoryId, page: 0 } } : { screen: 'home' };
         return this.show(ctx, target, 'Data sudah berubah. Periksa detail terbaru dan pilih tindakan lagi.');
       }
@@ -139,6 +141,7 @@ export class AdminNavigation {
         const rows = categories.slice(s.page * 5, s.page * 5 + 5);
         s.hasNext = (s.page + 1) * 5 < categories.length;
         body = list(rows, c => `${c.name} (${variants.filter(v => v.category_id === c.id && !v.archived).length})`, 'category');
+        choices([{ type: 'addCategory', label: 'Tambah katalog' }]);
       } else if (s.screen === 'variants') {
         if (!category) throw Object.assign(new Error('Kategori tidak ditemukan.'), { status: 404 });
         path = `${category.name} (${variants.filter(v => v.category_id === s.categoryId && !v.archived).length})${s.archived ? ' › Arsip' : ''}`;
@@ -161,6 +164,9 @@ export class AdminNavigation {
           { type: 'variantAction', id: 'archive', label: 'Arsipkan varian' },
         ])}`;
       }
+    } else if (s.screen === 'addCategory') {
+      path += ' › Katalog › Tambah katalog';
+      body = 'Ketik nama katalog baru.\nContoh: CANVA PRO\n\nMaksimal 80 karakter. Varian ditambahkan setelah katalog disimpan.';
     } else if (s.screen === 'input') {
       path += s.orderId ? ' › Pesanan › Alasan' : ' › Katalog › Ubah varian';
       body = s.orderId ? `${actionLabels[s.pending.action]}\nOrder: ${s.orderId}\n\nKetik alasan (1–2000 karakter).` : s.pending.field === 'price' ? 'Ketik harga baru dalam rupiah, angka saja.\nContoh: 90000' : `Ketik ${s.pending.field === 'name' ? 'nama baru (maksimal 120 karakter)' : 'durasi dan ketentuan baru (maksimal 2000 karakter)'}.`;
@@ -173,7 +179,8 @@ export class AdminNavigation {
         const o = await this.api.order(s.orderId);
         if (o.version !== s.pending.version) return this.show(ctx, { screen: 'order', orderId: o.id, back: s.back?.back || { screen: 'home' } }, 'Order berubah. Periksa ulang sebelum melanjutkan.');
         body = `${orderDetails(o)}\n*Tindakan: ${actionLabels[s.pending.action]}*${s.pending.reason ? `\nAlasan: ${s.pending.reason}` : ''}${s.pending.action === 'approve' ? '\nPastikan uang sudah masuk di aplikasi merchant.' : ''}`;
-      } else if (s.pending.kind === 'add') body = `*Simpan varian baru?*\n${s.pending.draft.name}\nHarga: ${money(s.pending.draft.price)}\n${s.pending.draft.terms}\n\nStatus awal: Tutup.`;
+      } else if (s.pending.kind === 'category') body = `Tambahkan katalog ini?\n\n${s.pending.name}\n\nKatalog baru belum memiliki varian dan akan muncul di menu buyer sebagai Belum tersedia.`;
+      else if (s.pending.kind === 'add') body = `*Simpan varian baru?*\n${s.pending.draft.name}\nHarga: ${money(s.pending.draft.price)}\n${s.pending.draft.terms}\n\nStatus awal: Tutup.`;
       else if (s.pending.kind === 'retry') body = `*Kirim ulang pesan?*\nTujuan: ${phone(s.pending.jid)}\nDibuat: ${date(new Date(s.pending.created).toISOString())}\n\nPesan sebelumnya mungkin sudah sampai. Periksa chat tujuan sebelum melanjutkan.`;
       else {
         const v = (await this.api.catalog(true)).variants.find(row => row.id === s.variantId);
@@ -195,7 +202,7 @@ export class AdminNavigation {
       body = page.items.length ? '' : 'Tidak ada pengiriman meragukan.';
     }
     if (body === undefined) return this.show(ctx, { screen: 'home' });
-    const input = s.screen === 'input' || s.screen === 'add';
+    const input = s.screen === 'input' || s.screen === 'add' || s.screen === 'addCategory';
     if (!input) {
       if (s.page > 0) menu.push({ type: 'page', delta: -1, label: 'Halaman sebelumnya' });
       if (s.hasNext) menu.push({ type: 'page', delta: 1, label: 'Halaman berikutnya' });
@@ -218,6 +225,7 @@ export class AdminNavigation {
     if (option.type === 'refresh') return this.show(ctx, location(s));
     if (option.type === 'order') return this.show(ctx, child(s, { screen: 'order', orderId: option.id }));
     if (option.type === 'category') return this.show(ctx, child(s, { screen: 'variants', categoryId: option.id, page: 0 }));
+    if (option.type === 'addCategory') return this.show(ctx, child(s, { screen: 'addCategory', draft: { key: `${event}:category` } }));
     if (option.type === 'variant') return this.show(ctx, child(s, { screen: 'variant', categoryId: s.categoryId, variantId: option.id }));
     if (option.type === 'archives') return this.show(ctx, child(s, { screen: 'variants', categoryId: s.categoryId, archived: true, page: 0 }));
     if (option.type === 'orderAction') {
@@ -241,6 +249,12 @@ export class AdminNavigation {
       return this.show(ctx, child(s, { screen: 'confirm', pending: { kind: 'retry', ...job } }));
     }
     if (option.type === 'execute') return this.execute(ctx);
+  }
+
+  async categoryInput(ctx, text) {
+    const name = text.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleUpperCase('id-ID');
+    if (!name || name.length > 80) return this.show(ctx, ctx.state, 'Nama katalog wajib 1–80 karakter.');
+    return this.show(ctx, child(ctx.state, { screen: 'confirm', pending: { kind: 'category', name, key: ctx.state.draft.key } }));
   }
 
   async input(ctx, text) {
@@ -276,6 +290,10 @@ export class AdminNavigation {
   async execute(ctx) {
     const s = ctx.state;
     const pending = s.pending;
+    if (pending.kind === 'category') {
+      const category = await this.api.category({ name: pending.name, key: pending.key });
+      return this.show(ctx, { screen: 'variants', categoryId: category.id, page: 0, back: s.back?.back || { screen: 'categories', page: 0 } }, '✓ Katalog ditambahkan. Pilih Tambah varian untuk mengisi produk.');
+    }
     if (pending.kind === 'order') {
       const before = await this.api.order(s.orderId);
       if (before.version !== pending.version) return this.show(ctx, { screen: 'order', orderId: before.id, back: { screen: 'orders', filter: 'all', page: 0 } }, 'Order berubah. Pilih ulang tindakan.');

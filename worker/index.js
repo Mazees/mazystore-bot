@@ -71,6 +71,24 @@ async function route(request, env) {
     ]);
     return { categories: categories.results, variants: variants.results };
   }
+  if (resource === 'categories' && method === 'POST' && !id) {
+    const data = await bodyOf(request);
+    const name = typeof data.name === 'string' ? data.name.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleUpperCase('id-ID') : '';
+    if (!text(name, 80) || !text(data.key, 250)) fail(400, 'Nama katalog wajib 1–80 karakter.');
+    const previous = await sql(db, 'SELECT * FROM categories WHERE request_key=?', data.key).first();
+    if (previous) {
+      if (previous.name !== name) fail(409, 'Permintaan katalog ini sudah dipakai. Mulai penambahan baru.');
+      return previous;
+    }
+    try { await sql(db, 'INSERT INTO categories(name,request_key) VALUES (?,?)', name, data.key).run(); }
+    catch (error) {
+      const retry = await sql(db, 'SELECT * FROM categories WHERE request_key=?', data.key).first();
+      if (retry && retry.name === name) return retry;
+      if (String(error).includes('UNIQUE')) fail(409, 'Nama katalog sudah ada. Pilih nama lain.');
+      throw error;
+    }
+    return sql(db, 'SELECT * FROM categories WHERE request_key=?', data.key).first();
+  }
   if (resource === 'customers' && id) {
     const row = await customer(db, id);
     if (method === 'GET' && !sub) return row;
@@ -109,7 +127,8 @@ async function route(request, env) {
     } else if (v.mode === 'archive' || v.mode === 'restore') {
       await update('archived=?,ready=0', v.mode === 'archive' ? 1 : 0);
     } else if (v.mode === 'add' || v.mode === 'edit') {
-      if (!Number.isInteger(v.categoryId) || v.categoryId < 1 || v.categoryId > 7 || !text(v.name, 120) || !text(v.terms, 2000) || !Number.isSafeInteger(v.price) || v.price < 1 || v.price > 9999999999) fail(400, 'Detail varian tidak valid.');
+      if (!Number.isSafeInteger(v.categoryId) || v.categoryId < 1 || !text(v.name, 120) || !text(v.terms, 2000) || !Number.isSafeInteger(v.price) || v.price < 1 || v.price > 9999999999) fail(400, 'Detail varian tidak valid.');
+      if (!await sql(db, 'SELECT id FROM categories WHERE id=?', v.categoryId).first()) fail(400, 'Katalog tidak ditemukan.');
       if (v.mode === 'add') await sql(db, 'INSERT INTO variants(id,category_id,name,price,terms) VALUES (?,?,?,?,?) ON CONFLICT(id) DO NOTHING', v.id, v.categoryId, v.name, v.price, v.terms).run();
       else await update('category_id=?,name=?,price=?,terms=?', v.categoryId, v.name, v.price, v.terms);
     } else fail(400, 'Operasi varian tidak valid.');

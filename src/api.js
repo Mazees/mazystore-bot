@@ -7,7 +7,7 @@ export class ApiError extends Error {
 export class StoreApi {
   constructor(url, secret) { this.url = url; this.secret = secret; }
   async call(path, method = 'GET', body) {
-    const idempotent = method === 'GET' || method === 'POST' && typeof body?.key === 'string' && (path === '/orders' || /^\/orders\/[^/]+\/actions$/.test(path));
+    const idempotent = method === 'GET' || method === 'POST' && typeof body?.key === 'string' && (path === '/orders' || path === '/categories' || /^\/orders\/[^/]+\/actions$/.test(path));
     for (let attempt = 0; attempt < 2; attempt++) {
       try { return await this.request(path, method, body); }
       catch (error) {
@@ -32,6 +32,7 @@ export class StoreApi {
     return result;
   }
   catalog(includeArchived = false) { return this.call(`/catalog${includeArchived ? '?archived=1' : ''}`); }
+  category(data) { return this.call('/categories', 'POST', data); }
   adminSummary() { return this.call('/admin/summary'); }
   adminOrders(filter = 'all', page = 0) { return this.call(`/admin/orders?filter=${encodeURIComponent(filter)}&page=${page}`); }
   adminConversations(page = 0) { return this.call(`/admin/conversations?page=${page}`); }

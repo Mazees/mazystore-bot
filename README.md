@@ -96,7 +96,7 @@ Jumlah varian nonarsip hanya ditampilkan pada menu admin di samping kategori, mi
 
 | Perintah | Fungsi |
 | --- | --- |
-| `/menu` | Katalog tujuh kategori AI |
+| `/menu` | Katalog produk; mengikuti kategori yang ditambahkan admin |
 | `/pesanan` | Status order aktif; kirim ulang QR sebelum bayar atau link CLAIM saat Diproses |
 | `/done` | Menyatakan sudah membayar; bot meminta foto bukti, belum lunas |
 | `/batal` | Batalkan sebelum `/done`; setelahnya minta pemeriksaan admin |
@@ -121,7 +121,7 @@ Untuk pertanyaan sebelum membayar, `/chat` membuka WA admin dengan pesan pertany
 Ketik **`/admin` atau `/menu`** dari nomor `ADMIN_NUMBER`:
 
 1. **Pesanan & pembayaran**: verifikasi, pesanan Diproses, pembatalan, refund, serta seluruh riwayat.
-2. **Kelola katalog**: pilih kategori → varian → ubah nama/harga/ketentuan, buka/tutup, arsip/pulihkan, atau tambah varian dengan kode otomatis.
+2. **Kelola katalog**: pilih Tambah katalog untuk membuat kategori produk baru, atau pilih katalog yang ada → varian → ubah nama/harga/ketentuan, buka/tutup, arsip/pulihkan, atau tambah varian dengan kode otomatis.
 3. **Status bot & pengiriman**: koneksi WA/D1, antrean, dan pengiriman meragukan yang dapat dikirim ulang setelah pemeriksaan.
 
 Nomor pilihan mengikuti layar. Maksimal lima item data per halaman; menu tetap menampilkan tindakan serta navigasi setelah daftar. Pilihan dan draft kedaluwarsa setelah 30 menit. Tindakan kritis menampilkan konfirmasi, sedangkan penolakan bukti, pembatalan admin, dan awal refund meminta alasan. Data yang berubah sejak menu ditampilkan harus diperiksa ulang.
@@ -132,6 +132,8 @@ Bukti pembayaran ada pada gambar notifikasi WA, bukan arsip database. Pilihan **
 
 Varian baru dan varian hasil pemulihan arsip selalu tutup. Lengkapi ketentuan sebelum membuka penjualan. Arsip menyembunyikan varian dari buyer tanpa mengubah snapshot order lama.
 
+**Menambah produk/katalog utama:** `/admin` → Kelola katalog → Tambah katalog → ketik nama → konfirmasi. Nama maksimal 80 karakter; spasi dirapikan dan huruf disimpan kapital. Nama yang sudah ada ditolak. Setelah disimpan, kamu langsung masuk ke katalog baru dengan pilihan Tambah varian. Katalog baru otomatis muncul pada buyer sebagai Belum tersedia sampai ada varian yang dibuka. Katalog tidak lagi terbatas pada tujuh kategori awal; penambahan katalog tidak membuat atau membuka varian otomatis. `/kembali` membatalkan langkah isian tanpa menambah data.
+
 ### Mencoba checkout melalui chat nomor bot sendiri
 
 Buka WhatsApp akun bot → chat ke nomornya sendiri → `/menu`. Pilihan produk, kuantitas, `/done`, dan foto bukti mengikuti alur buyer biasa tanpa prefix/flag khusus. Pesan otomatis bot dikecualikan agar tidak terjadi loop; pesan `fromMe` ke orang lain tidak menjadi input buyer. Akses admin tetap dari nomor admin terpisah.
@@ -140,7 +142,14 @@ Order dan QRIS tersebut **asli**, bukan sandbox. Tidak perlu mentransfer uang un
 
 ### Memperbarui instalasi yang sudah berjalan
 
-Jika submenu admin versi sebelumnya sudah berjalan, perubahan CLAIM/tampilan ini **tidak memerlukan migrasi D1 atau deploy Worker baru**. Struktur database dan API tidak berubah. Jangan mengganti secret, menjalankan setup ulang, atau menghapus sesi WA.
+Untuk fitur **Tambah katalog**, terapkan migrasi tambahan `0003_dynamic_catalog.sql` lalu deploy Worker **sebelum** memperbarui bot panel. Jalankan dari laptop yang sudah login Cloudflare:
+
+```sh
+npm run db:remote
+npm run worker:deploy
+```
+
+Migrasi mempertahankan katalog, varian, ID, dan transaksi lama; tidak menjalankan ulang seed katalog. Jangan mengganti secret, menjalankan setup ulang, atau menghapus sesi WA. Pembuatan katalog memakai kunci permintaan agar percobaan ulang tidak menambahkan katalog ganda.
 
 Setelah perubahan source di-commit/push, ambil kode di panel dengan `git pull`, hentikan proses bot lama, lalu jalankan ulang memakai **Node.js 26**. Periksa `/admin` dari WA admin dan `/menu` dari sisi buyer. Kode bot panel tidak diperbarui otomatis oleh deploy Worker.
 

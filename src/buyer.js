@@ -53,7 +53,7 @@ export class BuyerNavigation {
       const cat = catalog.categories.find(row => row.id === categoryId);
       if (!cat) return menu();
       const rows = catalog.variants.filter(v => v.category_id === categoryId && !v.archived);
-      const entries = rows.slice(page * 5, page * 5 + 5).map(v => ({ type: 'variant', id: v.id, label: `${v.name}\n${money(v.price)} · ${v.ready ? 'Buka' : 'Tutup'}\n${v.terms}` }));
+      const entries = rows.slice(page * 5, page * 5 + 5).map(v => ({ type: 'variant', id: v.id, label: `${v.name}\n${money(v.price)} · ${v.ready ? 'Ready' : 'Kosong'}\n${v.terms}` }));
       if (page > 0) entries.push({ type: 'page', page: page - 1, label: 'Halaman sebelumnya' });
       if ((page + 1) * 5 < rows.length) entries.push({ type: 'page', page: page + 1, label: 'Halaman berikutnya' });
       entries.push({ type: 'home', label: 'Kembali ke katalog' }, { type: 'help', label: 'Hubungi admin' });
