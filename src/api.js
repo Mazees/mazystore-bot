@@ -36,7 +36,7 @@ export class StoreApi {
   categoryAction(id, data) { return this.call(`/categories/${id}`, 'POST', data); }
   adminSummary() { return this.call('/admin/summary'); }
   broadcastRecipients(after = '') { return this.call(`/admin/recipients?after=${encodeURIComponent(after)}`); }
-  adminOrders(filter = 'all', page = 0) { return this.call(`/admin/orders?filter=${encodeURIComponent(filter)}&page=${page}`); }
+  adminOrders(filter = 'all') { return this.call(`/admin/orders?filter=${encodeURIComponent(filter)}`); }
   customer(buyer) { return this.call(`/customers/${encodeURIComponent(buyer)}`); }
   session(buyer, state) { return this.call(`/customers/${encodeURIComponent(buyer)}/session`, 'PUT', state); }
   createOrder(data) { return this.call('/orders', 'POST', data); }

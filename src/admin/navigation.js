@@ -3,13 +3,14 @@ import { screen, orderDetails, variantDetails, money, phone, date, statusLabels 
 import { orderActions, actionLabels, requiresReason, executeOrderAction, notifyOrderAction } from './actions.js';
 import { buyerContact, waLink } from '../contact.js';
 import { renderMessage } from '../ui.js';
+import { Testimonials } from '../testimonials.js';
 
 const TTL = 30 * 60000;
-const UI_VERSION = 6;
+const UI_VERSION = 8;
 const shortcuts = { '/setujui': 'approve', '/selesaikan': 'complete', '/selesai': 'complete', '/tolakbukti': 'reject_proof', '/batal': 'cancel', '/batalkan': 'cancel', '/refund': 'refund', '/refundselesai': 'refund_complete', '/lanjutkan': 'clear_cancel' };
 const legacy = new Set(['/produk','/tambahvarian','/ubahvarian','/harga','/ready','/order','/setujui','/tolakbukti','/selesai','/batalkan','/refund','/refundselesai','/lanjutkan','/balas','/gagalkirim','/ulang','/batalsetup']);
 const groupLabels = { all: 'Semua pesanan', review: 'Menunggu verifikasi', processing: 'Sedang diproses', cancellation: 'Permintaan pembatalan', refund: 'Refund', ...statusLabels };
-const locationKeys = ['screen','page','filter','categoryId','variantId','orderId','draft','step','pending','version','back'];
+const locationKeys = ['screen','filter','categoryId','variantId','orderId','draft','step','pending','version','back'];
 const location = state => Object.fromEntries(locationKeys.filter(key => state[key] !== undefined).map(key => [key, key === 'back' ? location(state.back) : state[key]]));
 const child = (state, next) => ({ ...next, back: location(state) });
 
@@ -18,6 +19,7 @@ export class AdminNavigation {
     this.api = api; this.transport = transport; this.local = local; this.runtime = runtime;
     this.adminNumber = config.adminNumber || config.adminJid?.split('@')[0];
     this.reportError = reportError;
+    this.testimonials = new Testimonials(local, transport);
   }
 
   async unavailable(message) {
@@ -52,6 +54,20 @@ export class AdminNavigation {
     try {
       if (['/admin','/menu','/start'].includes(command)) return await this.show(ctx, { screen: 'home' });
       if (shortcuts[command] && (command !== '/batal' || message.quotedId)) return await this.shortcut(ctx, command, text.slice(command.length).trim(), event);
+      if (command === '/post') {
+        if (text !== command || !ctx.state || ctx.state.uiVersion !== UI_VERSION || Date.now() - ctx.state.at > TTL || ctx.state.screen !== 'order') {
+          return await ctx.send(message.jid, renderMessage('ADMIN · AUTOTESTI', ['Buka detail order Selesai dari riwayat, lalu ketik /post tanpa parameter.']), null);
+        }
+        if (message.quotedId) {
+          let ref;
+          try { ref = await this.api.message(owner.buyer, message.quotedId); }
+          catch (error) { if (error.status !== 404) throw error; }
+          if (ref?.kind !== 'menu' || ref.menu_token !== ctx.state.token) {
+            return await ctx.send(message.jid, renderMessage('ADMIN · AUTOTESTI', ['Pesan yang dibalas bukan detail order terbaru. Ketik /post dari detail order yang sedang dibuka.']), null);
+          }
+        }
+        return await this.postTestimonial(ctx, await this.api.order(ctx.state.orderId), true);
+      }
       if (message.quotedId) {
         let ref;
         try { ref = await this.api.message(owner.buyer, message.quotedId); }
@@ -71,6 +87,12 @@ export class AdminNavigation {
       if (!ctx.state || ctx.state.uiVersion !== UI_VERSION || Date.now() - ctx.state.at > TTL) return await this.show(ctx, { screen: 'home' }, 'Pilihan dan draft lama sudah berakhir. Mulai dari sini.');
       if (command === '/kembali' || command === '/batal') return await this.show(ctx, ctx.state.back || { screen: 'home' });
       if (message.image) return await this.show(ctx, ctx.state, 'Gambar dan pesan dikirim langsung melalui WA buyer, bukan bot.');
+      if (ctx.state.screen === 'testimonialLink') {
+        try {
+          await this.testimonials.setChannel(text);
+        } catch (error) { return await this.show(ctx, ctx.state, error.message); }
+        return await this.show(ctx, { screen: 'testimonials', back: { screen: 'home' } }, '✓ Saluran tersimpan.');
+      }
       if (ctx.state.screen === 'broadcastInput') {
         if (!text || text.length > 2000) return await this.show(ctx, ctx.state, 'Pesan broadcast wajib 1–2000 karakter.');
         return await this.apply(ctx, child(ctx.state, { pending: { kind: 'broadcast', key: ctx.state.draft.key, text } }));
@@ -85,9 +107,9 @@ export class AdminNavigation {
     } catch (error) {
       if (error.status === 409) {
         const s = ctx.state;
-        if (s?.pending?.kind === 'category') return this.show(ctx, s.back || { screen: 'categories', page: 0 }, error.message);
-        if (s?.pending?.kind === 'categoryEdit') return this.show(ctx, { screen: 'variants', categoryId: s.categoryId, page: 0, back: { screen: 'categories', page: 0 } }, error.message);
-        const target = s?.orderId ? { screen: 'order', orderId: s.orderId, back: { screen: 'orders', filter: 'all', page: 0 } } : s?.variantId ? { screen: 'variant', variantId: s.variantId, categoryId: s.categoryId, back: { screen: 'variants', categoryId: s.categoryId, page: 0 } } : { screen: 'home' };
+        if (s?.pending?.kind === 'category') return this.show(ctx, s.back || { screen: 'categories' }, error.message);
+        if (s?.pending?.kind === 'categoryEdit') return this.show(ctx, { screen: 'variants', categoryId: s.categoryId, back: { screen: 'categories' } }, error.message);
+        const target = s?.orderId ? { screen: 'order', orderId: s.orderId, back: { screen: 'orders', filter: 'all' } } : s?.variantId ? { screen: 'variant', variantId: s.variantId, categoryId: s.categoryId, back: { screen: 'variants', categoryId: s.categoryId } } : { screen: 'home' };
         return this.show(ctx, target, 'Data sudah berubah. Periksa detail terbaru dan pilih tindakan lagi.');
       }
       return this.failure(message, error, ctx.state);
@@ -119,6 +141,7 @@ export class AdminNavigation {
     const pending = { action, reason: requiresReason(action) ? reason : '', key: `${event}:order:${action}`, version: order.version };
     const updated = await executeOrderAction(this.api, order, pending);
     await notifyOrderAction(updated, pending, ctx.send, this.adminNumber);
+    if (action === 'complete') await this.postTestimonial(ctx, updated);
     return ctx.send(ctx.message.jid, renderMessage('ADMIN · PESANAN', [`ID: ${updated.id}\nBuyer: ${phone(updated.buyer)}\nStatus: ${statusLabels[updated.status]}`, updated.status === 'processing' ? '/selesaikan jika pesanan sudah selesai di proses' : ['awaiting_payment','awaiting_proof','review'].includes(updated.status) ? 'Reply /batal untuk membatalkan pesanan.' : '']), { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay', purpose: 'transaction' });
   }
 
@@ -127,8 +150,15 @@ export class AdminNavigation {
     return this.execute(ctx);
   }
 
+  async postTestimonial(ctx, order, manual = false) {
+    const result = await this.testimonials.post(order);
+    if (manual || result.status !== 'disabled') {
+      await ctx.send(ctx.message.jid, renderMessage('ADMIN · AUTOTESTI', [`ID: ${order.id}`, result.message, order.status === 'completed' ? 'Status order tetap Selesai.' : '']), null);
+    }
+  }
+
   async show(ctx, view, notice = '') {
-    const s = { ...view, uiVersion: UI_VERSION, at: Date.now(), token: randomUUID(), options: {}, hasNext: false };
+    const s = { ...view, uiVersion: UI_VERSION, at: Date.now(), token: randomUUID(), options: {} };
     const menu = [];
     let path = 'Admin';
     let body;
@@ -141,10 +171,19 @@ export class AdminNavigation {
       const summary = await this.api.adminSummary();
       body = `*PERLU DITANGANI*\nPembayaran: *${summary.review}* menunggu verifikasi\nPembatalan: *${summary.cancellations}* permintaan\nSedang diproses: *${summary.processing}* pesanan\n\n${choices([
         { type: 'go', screen: 'orderGroups', label: 'Pesanan & pembayaran' },
-        { type: 'go', screen: 'categories', page: 0, label: 'Kelola katalog' },
+        { type: 'go', screen: 'categories', label: 'Kelola katalog' },
         { type: 'go', screen: 'system', label: 'Status bot & pengiriman' },
         { type: 'go', screen: 'broadcast', label: 'Broadcast pelanggan' },
+        { type: 'go', screen: 'testimonials', label: 'Autotesti saluran' },
       ])}`;
+    } else if (s.screen === 'testimonials') {
+      path += ' › Autotesti saluran';
+      const settings = this.testimonials.settings();
+      body = `Status: ${settings.enabled ? 'Aktif' : 'Nonaktif'}\nSaluran: ${settings.name || 'Belum diatur'}${settings.link ? `\n${settings.link}` : ''}\n\nPosting teks langsung saat order Selesai. Tidak memakai antrean. Posting manual juga memerlukan fitur Aktif.`;
+      choices([{ type: 'go', screen: 'testimonialLink', label: settings.jid ? 'Ubah saluran' : 'Atur saluran' }, { type: 'toggleTestimonial', label: settings.enabled ? 'Nonaktifkan' : 'Aktifkan' }]);
+    } else if (s.screen === 'testimonialLink') {
+      path += ' › Autotesti › Atur saluran';
+      body = 'Kirim link https://whatsapp.com/channel/...\nNomor bot wajib ADMIN atau OWNER saluran. Saluran hanya disimpan setelah izin berhasil diperiksa.';
     } else if (s.screen === 'broadcast') {
       path += ' › Broadcast';
       const counts = this.local.broadcastSummary();
@@ -156,42 +195,38 @@ export class AdminNavigation {
     } else if (s.screen === 'orderGroups') {
       path += ' › Pesanan & pembayaran';
       body = choices([
-        ...[['review','Menunggu verifikasi'],['processing','Sedang diproses'],['cancellation','Permintaan pembatalan'],['refund','Refund']].map(([filter,label]) => ({ type: 'go', screen: 'orders', page: 0, filter, label })),
-        { type: 'go', screen: 'filters', page: 0, label: 'Semua pesanan & riwayat' },
+        ...[['review','Menunggu verifikasi'],['processing','Sedang diproses'],['cancellation','Permintaan pembatalan'],['refund','Refund']].map(([filter,label]) => ({ type: 'go', screen: 'orders', filter, label })),
+        { type: 'go', screen: 'filters', label: 'Semua pesanan & riwayat' },
       ]);
     } else if (s.screen === 'filters') {
       path += ' › Pesanan › Filter';
-      const filters = [['all','Semua status'],['awaiting_payment','Belum membayar'],['awaiting_proof','Menunggu bukti'],['review','Menunggu verifikasi'],['processing','Sedang diproses'],['refund','Menunggu refund'],['completed','Selesai'],['cancelled','Dibatalkan'],['refunded','Refund selesai']];
-      const page = filters.slice(s.page * 5, s.page * 5 + 5);
-      s.hasNext = (s.page + 1) * 5 < filters.length;
-      body = choices(page.map(([filter,label]) => ({ type: 'go', screen: 'orders', filter, page: 0, label })));
+      const filters = [['completed','Selesai'],['all','Semua status'],['awaiting_payment','Belum membayar'],['awaiting_proof','Menunggu bukti'],['review','Menunggu verifikasi'],['processing','Sedang diproses'],['refund','Menunggu refund'],['cancelled','Dibatalkan'],['refunded','Refund selesai']];
+      body = choices(filters.map(([filter,label]) => ({ type: 'go', screen: 'orders', filter, label })));
     } else if (s.screen === 'orders') {
       path += ` › Pesanan › ${groupLabels[s.filter]}`;
-      const page = await this.api.adminOrders(s.filter, s.page || 0);
-      s.hasNext = page.hasNext;
-      list(page.items, o => o.id, 'order');
-      body = page.items.length ? '' : 'Belum ada pesanan pada daftar ini.';
+      const result = await this.api.adminOrders(s.filter);
+      list(result.items, o => o.id, 'order');
+      body = result.items.length ? '' : 'Belum ada pesanan pada daftar ini.';
     } else if (s.screen === 'order') {
       const order = await this.api.order(s.orderId);
       s.version = order.version;
       path += ' › Pesanan › Detail';
       body = `${orderDetails(order)}${order.status === 'review' ? '\nPeriksa uang masuk sebelum menyetujui.\n' : ''}\n${choices(orderActions(order).map(a => ({ ...a, type: 'orderAction' })))}`;
+      if (order.status === 'completed') body += '\n/post - Posting ke saluran';
     } else if (s.screen === 'categories' || s.screen === 'variants' || s.screen === 'variant') {
       const { categories, variants } = await this.api.catalog();
       const category = categories.find(c => c.id === s.categoryId);
       path += ' › Katalog';
       if (s.screen === 'categories') {
-        const rows = categories.slice(s.page * 5, s.page * 5 + 5);
-        s.hasNext = (s.page + 1) * 5 < categories.length;
+        const rows = categories;
         body = list(rows, c => `${c.name} (${variants.filter(v => v.category_id === c.id && !v.archived).length})`, 'category');
         choices([{ type: 'addCategory', label: 'Tambah katalog' }]);
       } else if (s.screen === 'variants') {
-        if (!category) return this.show(ctx, { screen: 'categories', page: 0, back: { screen: 'home' } }, 'Katalog sudah dihapus atau tidak tersedia.');
+        if (!category) return this.show(ctx, { screen: 'categories', back: { screen: 'home' } }, 'Katalog sudah dihapus atau tidak tersedia.');
         s.categoryVersion = category.version;
         path = `${category.name} (${variants.filter(v => v.category_id === s.categoryId && !v.archived).length})`;
         const rows = variants.filter(v => v.category_id === s.categoryId && !v.archived);
-        s.hasNext = (s.page + 1) * 5 < rows.length;
-        list(rows.slice(s.page * 5, s.page * 5 + 5), v => `${v.name} · ${money(v.price)}\nStatus: ${v.ready ? 'Ready' : 'Kosong'}`, 'variant');
+        list(rows, v => `${v.name} · ${money(v.price)}\nStatus: ${v.ready ? 'Ready' : 'Kosong'}`, 'variant');
         body = rows.length ? '' : 'Belum ada varian.';
         choices([{ type: 'addVariant', label: 'Tambah varian' }, { type: 'renameCategory', label: 'Ubah nama katalog' }, { type: 'deleteCategory', label: 'Hapus katalog' }]);
       } else {
@@ -223,44 +258,45 @@ export class AdminNavigation {
       await this.api.adminSummary();
       const runtime = this.runtime();
       const counts = this.local.outboxSummary();
-      body = `WhatsApp: ${runtime.whatsapp ? '🟢 Terhubung' : '⚪ Belum terhubung'}\nD1: 🟢 Terjangkau\nAntrean keluar: ${counts.pending}\nHasil kirim meragukan: ${counts.uncertain}\n\n${choices([{ type: 'go', screen: 'uncertain', page: 0, label: 'Periksa pengiriman meragukan' }, { type: 'refresh', label: 'Perbarui status' }])}`;
+      body = `WhatsApp: ${runtime.whatsapp ? '🟢 Terhubung' : '⚪ Belum terhubung'}\nD1: 🟢 Terjangkau\nAntrean keluar: ${counts.pending}\nHasil kirim meragukan: ${counts.uncertain}\n\n${choices([{ type: 'go', screen: 'uncertain', label: 'Periksa pengiriman meragukan' }, { type: 'refresh', label: 'Perbarui status' }])}`;
     } else if (s.screen === 'uncertain') {
       path += ' › Pengiriman › Perlu diperiksa';
-      const page = this.local.uncertainPage(s.page || 0);
-      s.hasNext = page.hasNext;
-      list(page.items, job => `${phone(job.jid)}\n${date(new Date(job.created).toISOString())}`, 'retry');
-      body = page.items.length ? 'Memilih pesan langsung mengirim ulang. Pesan sebelumnya mungkin sudah sampai; periksa chat tujuan dulu.' : 'Tidak ada pengiriman meragukan.';
+      const jobs = this.local.uncertain();
+      list(jobs, job => `${phone(job.jid)}\n${date(new Date(job.created).toISOString())}`, 'retry');
+      body = jobs.length ? 'Memilih pesan langsung mengirim ulang. Pesan sebelumnya mungkin sudah sampai; periksa chat tujuan dulu.' : 'Tidak ada pengiriman meragukan.';
     }
     if (body === undefined) return this.show(ctx, { screen: 'home' });
-    const input = s.screen === 'input' || s.screen === 'add' || s.screen === 'addCategory' || s.screen === 'renameCategory' || s.screen === 'broadcastInput';
+    const input = s.screen === 'input' || s.screen === 'add' || s.screen === 'addCategory' || s.screen === 'renameCategory' || s.screen === 'broadcastInput' || s.screen === 'testimonialLink';
     if (!input) {
-      if (s.page > 0) menu.push({ type: 'page', delta: -1, label: 'Halaman sebelumnya' });
-      if (s.hasNext) menu.push({ type: 'page', delta: 1, label: 'Halaman berikutnya' });
       if (s.screen !== 'home') menu.push({ type: 'back', label: 'Kembali' }, { type: 'home', label: 'Beranda' });
     }
     s.options = Object.fromEntries(menu.map((option, index) => [String(index + 1), option]));
     await ctx.save(s);
-    await ctx.send(ctx.message.jid, screen(path, body.trim(), { page: s.page, root: s.screen === 'home', notice, input, options: menu }), { buyer: ctx.owner.buyer, role: 'admin', kind: 'menu', menuToken: s.token });
+    await ctx.send(ctx.message.jid, screen(path, body.trim(), { root: s.screen === 'home', notice, input, options: menu }), { buyer: ctx.owner.buyer, role: 'admin', kind: 'menu', menuToken: s.token });
   }
 
   async select(ctx, option, event) {
     const s = ctx.state;
     if (option.type === 'back') return this.show(ctx, s.back || { screen: 'home' });
     if (option.type === 'home') return this.show(ctx, { screen: 'home' });
-    if (option.type === 'page') return this.show(ctx, { ...location(s), page: (s.page || 0) + option.delta });
     if (option.type === 'go') {
       const { type, label, ...next } = option;
       return this.show(ctx, child(s, next));
     }
     if (option.type === 'refresh') return this.show(ctx, location(s));
+    if (option.type === 'toggleTestimonial') {
+      try { await this.testimonials.setEnabled(!this.testimonials.settings().enabled); }
+      catch (error) { return this.show(ctx, location(s), error.message); }
+      return this.show(ctx, location(s));
+    }
     if (option.type === 'newBroadcast') return this.show(ctx, child(s, { screen: 'broadcastInput', draft: { key: randomUUID() } }));
     if (option.type === 'cancelBroadcast') return this.apply(ctx, child(s, { pending: { kind: 'cancelBroadcast' } }));
     if (option.type === 'order') return this.show(ctx, child(s, { screen: 'order', orderId: option.id }));
-    if (option.type === 'category') return this.show(ctx, child(s, { screen: 'variants', categoryId: option.id, page: 0 }));
+    if (option.type === 'category') return this.show(ctx, child(s, { screen: 'variants', categoryId: option.id }));
     if (option.type === 'addCategory') return this.show(ctx, child(s, { screen: 'addCategory', draft: { key: `${event}:category` } }));
     if (option.type === 'renameCategory' || option.type === 'deleteCategory') {
       const category = (await this.api.catalog()).categories.find(c => c.id === s.categoryId);
-      if (!category) return this.show(ctx, { screen: 'categories', page: 0 }, 'Katalog sudah dihapus.');
+      if (!category) return this.show(ctx, { screen: 'categories' }, 'Katalog sudah dihapus.');
       if (category.version !== s.categoryVersion) return this.show(ctx, location(s), 'Katalog berubah. Pilih tindakan lagi.');
       const pending = { kind: 'categoryEdit', mode: option.type === 'renameCategory' ? 'rename' : 'delete', version: category.version, oldName: category.name };
       const next = child(s, { screen: 'renameCategory', categoryId: category.id, pending });
@@ -347,34 +383,35 @@ export class AdminNavigation {
     }
     if (pending.kind === 'categoryEdit') {
       const category = await this.api.categoryAction(s.categoryId, { mode: pending.mode, expectedVersion: pending.version, name: pending.name });
-      if (pending.mode === 'delete') return this.show(ctx, { screen: 'categories', page: 0, back: { screen: 'home' } }, '✓ Katalog dihapus. Pesanan lama tetap tersimpan.');
-      return this.show(ctx, { screen: 'variants', categoryId: category.id, page: 0, back: { screen: 'categories', page: 0 } }, '✓ Nama katalog diperbarui.');
+      if (pending.mode === 'delete') return this.show(ctx, { screen: 'categories', back: { screen: 'home' } }, '✓ Katalog dihapus. Pesanan lama tetap tersimpan.');
+      return this.show(ctx, { screen: 'variants', categoryId: category.id, back: { screen: 'categories' } }, '✓ Nama katalog diperbarui.');
     }
     if (pending.kind === 'category') {
       const category = await this.api.category({ name: pending.name, key: pending.key });
-      return this.show(ctx, { screen: 'variants', categoryId: category.id, page: 0, back: s.back?.back || { screen: 'categories', page: 0 } }, '✓ Katalog ditambahkan. Pilih Tambah varian untuk mengisi produk.');
+      return this.show(ctx, { screen: 'variants', categoryId: category.id, back: s.back?.back || { screen: 'categories' } }, '✓ Katalog ditambahkan. Pilih Tambah varian untuk mengisi produk.');
     }
     if (pending.kind === 'order') {
       const before = await this.api.order(s.orderId);
-      if (before.version !== pending.version) return this.show(ctx, { screen: 'order', orderId: before.id, back: { screen: 'orders', filter: 'all', page: 0 } }, 'Order berubah. Pilih ulang tindakan.');
+      if (before.version !== pending.version) return this.show(ctx, { screen: 'order', orderId: before.id, back: { screen: 'orders', filter: 'all' } }, 'Order berubah. Pilih ulang tindakan.');
       const updated = await executeOrderAction(this.api, before, pending);
       await notifyOrderAction(updated, pending, ctx.send, this.adminNumber);
-      return this.show(ctx, { screen: 'order', orderId: updated.id, back: { screen: 'orders', filter: 'all', page: 0 } }, '✓ Perubahan tersimpan dan pemberitahuan buyer masuk antrean.');
+      if (pending.action === 'complete') await this.postTestimonial(ctx, updated);
+      return this.show(ctx, { screen: 'order', orderId: updated.id, back: { screen: 'orders', filter: 'all' } }, '✓ Perubahan tersimpan dan pemberitahuan buyer masuk antrean.');
     }
     if (pending.kind === 'add') {
       const v = await this.api.variant({ ...pending.draft, mode: 'add' });
-      return this.show(ctx, { screen: 'variant', variantId: v.id, categoryId: v.category_id, back: { screen: 'variants', categoryId: v.category_id, page: 0 } }, '✓ Varian dibuat dengan status Kosong. Periksa sebelum menandainya Ready.');
+      return this.show(ctx, { screen: 'variant', variantId: v.id, categoryId: v.category_id, back: { screen: 'variants', categoryId: v.category_id } }, '✓ Varian dibuat dengan status Kosong. Periksa sebelum menandainya Ready.');
     }
     if (pending.kind === 'variant') {
       const v = await this.api.variant({ id: s.variantId, mode: pending.field, expectedVersion: pending.version, ...(pending.field === 'price' ? { price: pending.value } : ['name','terms'].includes(pending.field) ? { value: pending.value } : pending.field === 'ready' ? { ready: pending.ready } : {}) });
-      if (v.deleted) return this.show(ctx, { screen: 'variants', categoryId: v.category_id, page: 0, back: { screen: 'categories', page: 0 } }, '✓ Varian dihapus permanen. Pesanan lama tetap tersimpan.');
-      return this.show(ctx, { screen: 'variant', variantId: v.id, categoryId: v.category_id, back: { screen: 'variants', categoryId: v.category_id, page: 0 } }, '✓ Perubahan tersimpan.');
+      if (v.deleted) return this.show(ctx, { screen: 'variants', categoryId: v.category_id, back: { screen: 'categories' } }, '✓ Varian dihapus permanen. Pesanan lama tetap tersimpan.');
+      return this.show(ctx, { screen: 'variant', variantId: v.id, categoryId: v.category_id, back: { screen: 'variants', categoryId: v.category_id } }, '✓ Perubahan tersimpan.');
     }
     if (pending.kind === 'retry') {
       const job = this.local.uncertainById(pending.id);
-      if (!job || job.jid !== pending.jid) return this.show(ctx, { screen: 'uncertain', page: 0, back: { screen: 'system' } }, 'Pesan sudah berubah atau kedaluwarsa.');
+      if (!job || job.jid !== pending.jid) return this.show(ctx, { screen: 'uncertain', back: { screen: 'system' } }, 'Pesan sudah berubah atau kedaluwarsa.');
       const retried = this.local.retry(job.id);
-      return this.show(ctx, { screen: 'uncertain', page: 0, back: { screen: 'system' } }, retried ? '✓ Pesan masuk antrean pengiriman ulang.' : 'Pesan tidak lagi dapat diulang.');
+      return this.show(ctx, { screen: 'uncertain', back: { screen: 'system' } }, retried ? '✓ Pesan masuk antrean pengiriman ulang.' : 'Pesan tidak lagi dapat diulang.');
     }
   }
 

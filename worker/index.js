@@ -50,8 +50,6 @@ async function route(request, env) {
       COALESCE(SUM(status='processing'),0) AS processing,
       COALESCE(SUM(cancel_requested=1 AND status NOT IN ('completed','cancelled','refunded')),0) AS cancellations
       FROM orders`).first();
-    const page = Number(url.searchParams.get('page') || 0);
-    if (!Number.isSafeInteger(page) || page < 0 || page > 100000) fail(400, 'Halaman tidak valid.');
     if (id === 'orders') {
       const filters = {
         all: '1=1', review: "status='review'", processing: "status='processing'",
@@ -62,8 +60,8 @@ async function route(request, env) {
       };
       const filter = filters[url.searchParams.get('filter') || 'all'];
       if (!filter) fail(400, 'Filter tidak valid.');
-      const result = await sql(db, `SELECT * FROM orders WHERE ${filter} ORDER BY created_at DESC,id DESC LIMIT 6 OFFSET ?`, page * 5).all();
-      return { items: result.results.slice(0,5), page, hasNext: result.results.length > 5 };
+      const result = await db.prepare(`SELECT * FROM orders WHERE ${filter} ORDER BY created_at DESC,id DESC`).all();
+      return { items: result.results };
     }
   }
   if (resource === 'catalog' && method === 'GET') {

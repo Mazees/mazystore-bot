@@ -88,7 +88,7 @@ Pastikan `/home/container`/folder project tetap tersimpan setelah restart. Panel
 
 Menu buyer/admin, detail order, pembayaran, CLAIM, dan caption foto mengikuti gaya Mazy Store: header dekoratif pendek, judul tebal, pemisah bagian, serta pilihan bernomor 01, 02, dan seterusnya. Pilihan produk memakai blok terbuka ┌ / │ / └; rincian dan petunjuk memakai teks regular. Tidak memakai monospace atau pemotongan lebar kolom. Input 1 maupun 01 memilih item yang sama. Harga, jumlah katalog dan label pilihan tetap berasal dari database. WhatsApp membungkus teks sesuai layar; ID dan link tetap utuh.
 
-Semua pilihan memakai **1, 2, 3, ... sesuai urutan layar**, termasuk Kembali, Beranda, dan pindah halaman. Tidak ada nomor navigasi khusus 0, 00, 6/7, atau 8/9. Saat mengisi nama, harga, alasan, atau kuantitas, gunakan `/kembali`; angka adalah data, bukan navigasi. `/admin` membuka beranda admin dan `/menu` membuka katalog buyer (atau beranda jika pengirim adalah admin).
+Semua pilihan memakai **1, 2, 3, ... sesuai urutan layar**, termasuk Kembali dan Beranda. Tidak ada nomor navigasi khusus 0, 00, 6/7, atau 8/9. Saat mengisi nama, harga, alasan, atau kuantitas, gunakan `/kembali`; angka adalah data, bukan navigasi. `/admin` membuka beranda admin dan `/menu` membuka katalog buyer (atau beranda jika pengirim adalah admin).
 
 Jumlah varian hanya ditampilkan pada menu admin di samping kategori, misalnya `CHATGPT API KEY (0)`. Varian Ready dan Kosong termasuk hitungan tersebut. Buyer melihat harga varian Ready atau Belum tersedia, tanpa hitungan `(n)`. Kategori kosong pada admin menampilkan Tambah varian, Ubah nama katalog, Hapus katalog, Kembali, dan Beranda.
 
@@ -135,9 +135,21 @@ Ketik **`/admin` atau `/menu`** dari nomor `ADMIN_NUMBER`:
 3. **Status bot & pengiriman**: koneksi WA/D1, antrean, dan pengiriman meragukan yang dapat dikirim ulang setelah pemeriksaan.
 4. **Broadcast pelanggan**: tulis pesan teks; setelah dikirim, pesan langsung masuk antrean tanpa konfirmasi tambahan. Penerima adalah pelanggan yang tercatat di D1; nomor admin dan bot dikecualikan. Tidak mengimpor riwayat chat WhatsApp lama.
 
+5. **Autotesti saluran**: atur link saluran WhatsApp dan aktifkan/nonaktifkan posting transaksi selesai.
+
 Broadcast memakai antrean SQLite yang sama, dengan jeda minimal 5 detik antarpercobaan kirim selama bot berjalan. Pesan transaksi didahulukan. Menu broadcast menampilkan antrean, kiriman yang diterima WA (bukan dibaca), serta hasil meragukan. Sisa antrean dapat dihentikan langsung; kiriman yang sudah/sedang dikirim tidak ditarik. Antrean tersimpan saat restart. Pesan meragukan tidak otomatis dikirim ulang; periksa melalui Status bot & pengiriman. Broadcast mendukung teks maksimal 2000 karakter; gambar dan penjadwalan belum tersedia. Jeda pengiriman tidak menjamin akun bebas pembatasan WhatsApp.
 
-Nomor pilihan mengikuti layar. Maksimal lima item data per halaman; menu tetap menampilkan tindakan serta navigasi setelah daftar. Pilihan dan draft kedaluwarsa setelah 30 menit. Tindakan langsung dijalankan setelah dipilih, tanpa layar konfirmasi. Penolakan bukti, pembatalan admin, dan awal refund tetap meminta alasan; setelah alasan dikirim, tindakan langsung dijalankan. Data yang berubah sejak menu ditampilkan harus diperiksa ulang.
+### Autotesti saluran
+
+Buka **/admin → Autotesti saluran → Atur saluran**, kirim link https://whatsapp.com/channel/..., lalu pilih **Aktifkan**. Bot memeriksa viewer_metadata.role melalui Baileys; hanya ADMIN atau OWNER yang diterima. Link tidak valid, koneksi gagal, atau role tidak pasti ditolak tanpa menimpa pengaturan sebelumnya. Default Nonaktif. Pengaturan tersimpan terenkripsi pada SQLite lokal dan tetap ada setelah restart; tidak membutuhkan variabel .env atau migrasi D1 baru.
+
+Saat order berhasil menjadi Selesai melalui shortcut /selesaikan maupun menu admin, bot langsung memposting ke saluran jika fitur Aktif. Posting berisi ID order, nomor buyer yang disensor, produk, varian, jumlah, total, status, dan waktu selesai WIB. Data menggunakan snapshot order, termasuk bila variannya sudah dihapus. Identitas lengkap, kredensial, OTP, deskripsi privat, dan gambar bukti tidak diposting.
+
+Di **Pesanan & pembayaran → Semua pesanan & riwayat → Selesai → pilih ID**, ketik **/post** tanpa parameter. Command hanya menggunakan order Selesai yang sedang dibuka dan sesi admin yang belum kedaluwarsa. Posting manual boleh diulang. Saat fitur Nonaktif, posting otomatis dan manual diblokir. Tidak ada posting susulan untuk order lama saat fitur diaktifkan.
+
+Autotesti memakai pengiriman langsung, tanpa antrean dan tanpa retry otomatis. Setiap posting memeriksa ulang role bot. Jika bot bukan lagi admin, fitur dinonaktifkan. Kegagalan koneksi/pemeriksaan role tidak mengubah pengaturan. Posting gagal tetap mempertahankan order Selesai dan memberi pemberitahuan kepada admin. Pengiriman yang timeout atau hasilnya tidak pasti harus diperiksa di saluran sebelum mencoba manual agar tidak menggandakan posting. Saluran yang baru disimpan mempertahankan status Aktif/Nonaktif sebelumnya.
+
+Nomor pilihan mengikuti layar. Semua item katalog, varian, filter status, order, dan pengiriman bermasalah ditampilkan sekaligus tanpa pagination. Pesan panjang tetap dipecah otomatis menjadi beberapa pesan WA dengan nomor pilihan yang berlanjut; gunakan daftar dari menu terbaru. Pilihan dan draft kedaluwarsa setelah 30 menit. Tindakan langsung dijalankan setelah dipilih, tanpa layar konfirmasi. Penolakan bukti, pembatalan admin, dan awal refund tetap meminta alasan; setelah alasan dikirim, tindakan langsung dijalankan. Data yang berubah sejak menu ditampilkan harus diperiksa ulang.
 
 Jika terjadi error, `ADMIN_INTERNAL` berarti kegagalan kode menu, `API_NETWORK` berarti koneksi/timeout Worker, `API_RESPONSE` berarti respons tidak sesuai (misalnya URL salah), dan `API_HTTP` menampilkan status penolakan/gangguan Worker. Console mencatat kode, jenis error, layar, dan lokasi source tanpa isi pesan atau secret. Periksa status order sebelum mengulangi tindakan. Request baca serta pembuatan/tindakan order dengan kunci idempotensi mencoba ulang satu kali saat gangguan koneksi/5xx; perubahan katalog tidak diulang otomatis.
 

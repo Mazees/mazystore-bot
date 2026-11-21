@@ -24,7 +24,7 @@ export class BuyerNavigation {
     const command = text.split(/\s+/)[0].toLowerCase();
     const context = { buyer: c.buyer, orderId: c.order?.id || null, role: 'buyer', kind: 'relay', purpose: 'transaction' };
     const notice = value => say(value, this.config.adminJid, context);
-    const save = async state => { c.session = { ...state, buyerUiVersion: 3 }; await api.session(c.buyer, c.session); };
+    const save = async state => { c.session = { ...state, buyerUiVersion: 4 }; await api.session(c.buyer, c.session); };
     const action = (name, extra = {}) => api.action(c.order.id, { action: name, key: `${event}:${name}`, actor: c.buyer, ...extra });
     const info = (value, title = 'MAZY STORE · INFO') => say(renderMessage(title, [value]));
     const help = () => say(helpMessage(this.adminNumber));
@@ -49,16 +49,14 @@ export class BuyerNavigation {
       entries.push({ type: 'order', label: 'Pesanan saya' }, { type: 'help', label: 'Hubungi admin' });
       return options('MAZY STORE · MENU', ['*KATALOG PRODUK DIGITAL & AI*'], { stage: 'menu' }, entries);
     };
-    const variants = async (categoryId, page = 0) => {
+    const variants = async (categoryId) => {
       const catalog = await api.catalog();
       const cat = catalog.categories.find(row => row.id === categoryId);
       if (!cat) return menu();
       const rows = catalog.variants.filter(v => v.category_id === categoryId && !v.archived);
-      const entries = rows.slice(page * 5, page * 5 + 5).map(v => ({ type: 'variant', id: v.id, label: `${v.name}\n${money(v.price)} · ${v.ready ? 'Ready' : 'Kosong'}\n*Deskripsi*\n${v.terms}` }));
-      if (page > 0) entries.push({ type: 'page', page: page - 1, label: 'Halaman sebelumnya' });
-      if ((page + 1) * 5 < rows.length) entries.push({ type: 'page', page: page + 1, label: 'Halaman berikutnya' });
+      const entries = rows.map(v => ({ type: 'variant', id: v.id, label: `${v.name}\n${money(v.price)} · ${v.ready ? 'Ready' : 'Kosong'}\n*Deskripsi*\n${v.terms}` }));
       entries.push({ type: 'home', label: 'Kembali ke katalog' }, { type: 'help', label: 'Hubungi admin' });
-      return options(cat.name, [rows.length ? `Halaman ${page + 1}` : 'Belum ada varian.'], { stage: 'variant', categoryId, page }, entries);
+      return options(cat.name, [rows.length ? '' : 'Belum ada varian.'], { stage: 'variant', categoryId }, entries);
     };
     const quantity = async state => {
       const v = (await api.catalog()).variants.find(row => row.id === state.variantId && !row.archived);
@@ -112,7 +110,7 @@ export class BuyerNavigation {
       return menu();
     }
     if (command.startsWith('/')) return info('Perintah tersedia:\n/menu: katalog\n/pesanan: status order\n/done: sudah membayar\n/batal: pembatalan\n/chat: link WA admin');
-    if (c.session.buyerUiVersion !== 3) return menu();
+    if (c.session.buyerUiVersion !== 4) return menu();
     const state = c.session;
     if (state.stage === 'quantity' && !c.order) {
       if (!/^\d+$/.test(text) || !Number.isSafeInteger(Number(text)) || Number(text) < 1 || Number(text) > this.config.maxQuantity) return info(`Masukkan jumlah bulat 1–${this.config.maxQuantity}.\n/kembali: pilih varian\n/menu: katalog`);
@@ -135,7 +133,6 @@ export class BuyerNavigation {
     if (option?.type === 'order') return active();
     if (c.order) return active();
     if (option?.type === 'category') return variants(option.id);
-    if (option?.type === 'page') return variants(state.categoryId, option.page);
     if (option?.type === 'variant') return quantity({ variantId: option.id });
     if (option?.type === 'quantity') return quantity(state);
     return info('Pilihan tidak valid. Gunakan angka pada menu terakhir.\n/menu: buka katalog\n/kembali: langkah sebelumnya');
