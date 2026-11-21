@@ -1,7 +1,9 @@
 import { renderMessage } from './ui.js';
 import { date, money } from './admin/render.js';
+import { readFile } from 'node:fs/promises';
 
 const SETTINGS_KEY = 'settings:autotesti';
+const TESTIMONIAL_IMAGE = new URL('../assets/testimoni.png', import.meta.url);
 
 async function bounded(operation) {
   let timer;
@@ -73,8 +75,11 @@ export class Testimonials {
       const text = renderMessage('MAZY STORE | TESTIMONI', [
         `ID: ${order.id}\nBuyer: ${maskedBuyer}\nProduk: ${order.product}\nVarian: ${order.variant}\nJumlah: ${order.quantity}\nTotal: ${money(order.total)}\nStatus: Selesai\nWaktu selesai: ${date(order.updated_at)} WIB`,
       ]);
+      let image;
+      try { image = await readFile(TESTIMONIAL_IMAGE); }
+      catch { return { status: 'failed', message: 'Gambar testimoni belum dapat dibaca. Pastikan assets/testimoni.png ikut diperbarui di panel, lalu coba /post kembali.' }; }
       sending = true;
-      const sent = await bounded(() => this.transport.send(settings.jid, { text }));
+      const sent = await bounded(() => this.transport.send(settings.jid, { image, caption: text, mimetype: 'image/png' }));
       if (!sent?.key?.id) throw new Error('Pengiriman belum terkonfirmasi.');
       return { status: 'sent', message: `✓ Testimoni dikirim ke ${settings.name}.` };
     } catch (error) {

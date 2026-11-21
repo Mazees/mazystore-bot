@@ -179,7 +179,7 @@ export class AdminNavigation {
     } else if (s.screen === 'testimonials') {
       path += ' › Autotesti saluran';
       const settings = this.testimonials.settings();
-      body = `Status: ${settings.enabled ? 'Aktif' : 'Nonaktif'}\nSaluran: ${settings.name || 'Belum diatur'}${settings.link ? `\n${settings.link}` : ''}\n\nPosting teks langsung saat order Selesai. Tidak memakai antrean. Posting manual juga memerlukan fitur Aktif.`;
+      body = `Status: ${settings.enabled ? 'Aktif' : 'Nonaktif'}\nSaluran: ${settings.name || 'Belum diatur'}${settings.link ? `\n${settings.link}` : ''}\n\nPosting gambar dan caption langsung saat order Selesai. Tidak memakai antrean. Posting manual juga memerlukan fitur Aktif.`;
       choices([{ type: 'go', screen: 'testimonialLink', label: settings.jid ? 'Ubah saluran' : 'Atur saluran' }, { type: 'toggleTestimonial', label: settings.enabled ? 'Nonaktifkan' : 'Aktifkan' }]);
     } else if (s.screen === 'testimonialLink') {
       path += ' › Autotesti › Atur saluran';
