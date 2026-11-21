@@ -119,7 +119,7 @@ export class AdminNavigation {
     const pending = { action, reason: requiresReason(action) ? reason : '', key: `${event}:order:${action}`, version: order.version };
     const updated = await executeOrderAction(this.api, order, pending);
     await notifyOrderAction(updated, pending, ctx.send, this.adminNumber);
-    return ctx.send(ctx.message.jid, renderMessage('ADMIN · PESANAN', [`ID: ${updated.id}\nBuyer: ${phone(updated.buyer)}\nStatus: ${statusLabels[updated.status]}`, updated.status === 'processing' ? '/selesaikan jika pesanan sudah selesai di proses' : '']), { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay', purpose: 'transaction' });
+    return ctx.send(ctx.message.jid, renderMessage('ADMIN · PESANAN', [`ID: ${updated.id}\nBuyer: ${phone(updated.buyer)}\nStatus: ${statusLabels[updated.status]}`, updated.status === 'processing' ? '/selesaikan jika pesanan sudah selesai di proses' : ['awaiting_payment','awaiting_proof','review'].includes(updated.status) ? 'Reply /batal untuk membatalkan pesanan.' : '']), { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay', purpose: 'transaction' });
   }
 
   async apply(ctx, state) {

@@ -208,15 +208,15 @@ async function route(request, env) {
       if (data.expectedVersion !== undefined && (!Number.isSafeInteger(data.expectedVersion) || data.expectedVersion !== order.version)) fail(409, 'Order berubah. Buka detail terbaru.');
       const transitions = {
         done: { from: ['awaiting_payment'], to: 'awaiting_proof', admin: false },
-        submit_proof: { from: ['awaiting_proof'], to: 'review', admin: false, extra: ",proof_relay='pending'" },
-        proof_sent: { from: ['review'], to: 'review', admin: false, extra: ",proof_relay='sent'" },
-        reject_proof: { from: ['review'], to: 'awaiting_proof', admin: true, extra: ",proof_relay='none'" },
+        submit_proof: { from: ['awaiting_proof'], to: 'review', admin: false, extra: ",proof_relay='pending',cancel_requested=0" },
+        proof_sent: { from: ['review'], to: 'review', admin: false, extra: ",proof_relay='sent',cancel_requested=0" },
+        reject_proof: { from: ['review'], to: 'awaiting_proof', admin: true, extra: ",proof_relay='none',cancel_requested=0" },
         approve: { from: ['review'], to: 'processing', admin: true },
         complete: { from: ['processing'], to: 'completed', admin: true },
         refund: { from: ['processing'], to: 'refund_pending', admin: true },
         refund_complete: { from: ['refund_pending'], to: 'refunded', admin: true },
         cancel: { from: ['awaiting_payment','awaiting_proof','review'], to: 'cancelled', admin, extra: ',cancel_requested=0' },
-        request_cancel: { from: ['awaiting_proof','review','processing'], to: order.status, admin: false, extra: ',cancel_requested=1' },
+        request_cancel: { from: ['awaiting_proof','review','processing'], to: order.status === 'processing' ? 'processing' : 'cancelled', admin: false, extra: order.status === 'processing' ? ',cancel_requested=1' : ',cancel_requested=0' },
         clear_cancel: { from: ['awaiting_proof','review','processing'], to: order.status, admin: true, extra: ',cancel_requested=0' },
       };
       const t = transitions[data.action];
