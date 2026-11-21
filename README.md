@@ -141,7 +141,7 @@ Broadcast memakai antrean SQLite yang sama, dengan jeda minimal 5 detik antarper
 
 ### Autotesti saluran
 
-Buka **/admin → Autotesti saluran → Atur saluran**, kirim link https://whatsapp.com/channel/..., lalu pilih **Aktifkan**. Bot memeriksa viewer_metadata.role melalui Baileys; hanya ADMIN atau OWNER yang diterima. Link tidak valid, koneksi gagal, atau role tidak pasti ditolak tanpa menimpa pengaturan sebelumnya. Default Nonaktif. Pengaturan tersimpan terenkripsi pada SQLite lokal dan tetap ada setelah restart; tidak membutuhkan variabel .env atau migrasi D1 baru.
+Buka **/admin → Autotesti saluran → Atur saluran**, kirim link https://whatsapp.com/channel/..., lalu pilih **Aktifkan**. Bot menyelesaikan link menjadi ID saluran, lalu mengambil metadata akun bot melalui ID tersebut sebelum memeriksa viewer_metadata.role. Hasil metadata link tidak dipakai sebagai bukti izin karena bisa tidak menyertakan role. Nilai role dinormalisasi tanpa membedakan huruf besar/kecil; hanya ADMIN atau OWNER yang diterima. Link tidak valid, koneksi gagal, atau role tidak pasti ditolak tanpa menimpa pengaturan sebelumnya. Default Nonaktif. Pengaturan tersimpan terenkripsi pada SQLite lokal dan tetap ada setelah restart; tidak membutuhkan variabel .env atau migrasi D1 baru.
 
 Saat order berhasil menjadi Selesai melalui shortcut /selesaikan maupun menu admin, bot langsung memposting ke saluran jika fitur Aktif. Posting berisi ID order, nomor buyer yang disensor, produk, varian, jumlah, total, status, dan waktu selesai WIB. Data menggunakan snapshot order, termasuk bila variannya sudah dihapus. Identitas lengkap, kredensial, OTP, deskripsi privat, dan gambar bukti tidak diposting.
 

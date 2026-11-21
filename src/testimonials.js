@@ -24,7 +24,10 @@ export class Testimonials {
     catch { throw new Error('Metadata saluran belum dapat diperiksa. Periksa koneksi dan link saluran.'); }
     if (!metadata || !/^\d+@newsletter$/.test(metadata.id)) throw new Error('Saluran tidak ditemukan atau metadata saluran tidak valid.');
     if (type === 'jid' && metadata.id !== key) throw new Error('Metadata tidak cocok dengan saluran yang dipilih.');
-    const role = metadata.viewer_metadata?.role;
+    // Invite metadata may omit the current account's role; verify it through the resolved JID.
+    if (type === 'invite') return { ...metadata, ...await this.access('jid', metadata.id) };
+    const rawRole = metadata.viewer_metadata?.role;
+    const role = typeof rawRole === 'string' ? rawRole.trim().toUpperCase() : '';
     if (role === 'SUBSCRIBER' || role === 'GUEST') {
       throw Object.assign(new Error('Nomor bot bukan admin saluran. Jadikan bot ADMIN atau OWNER terlebih dahulu.'), { accessDenied: true });
     }
