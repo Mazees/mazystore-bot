@@ -157,6 +157,8 @@ Jika terjadi error, `ADMIN_INTERNAL` berarti kegagalan kode menu, `API_NETWORK` 
 
 Shortcut admin: **reply notifikasi order, pemberitahuan /done, foto bukti, atau hasil tindakan order** dengan perintah berikut. ID diambil dari referensi pesan, tidak dari teks/nomor menu. Shortcut tidak mengubah posisi submenu atau draft admin.
 
+Uji tombol WhatsApp: dari nomor admin kirim `/tesbutton` ke bot. Bot mengirim link teks cadangan, lalu pesan Native Flow dengan tombol **CLAIM pembelian**. Tombol membuka `ADMIN_NUMBER` dengan pesan uji yang jelas bukan klaim pesanan. Perintah tidak mengubah order atau posisi menu dan tidak tersedia untuk buyer/self-chat buyer. Periksa apakah tombol tampil dan bisa diklik pada aplikasi WA; selesainya relay belum membuktikan tampilannya. Alur CLAIM transaksi tetap memakai shortlink teks sampai pengujian nyata berhasil. Tidak perlu dependency baru, migrasi D1, atau deploy Worker. Relay tombol yang gagal tercatat pada pengiriman bermasalah dan tidak otomatis diulang.
+
 | Reply dengan | Tindakan |
 |---|---|
 | /setujui | Setujui pembayaran yang sedang diverifikasi; kirim CLAIM |
