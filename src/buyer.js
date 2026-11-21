@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { grid, numbered } from './ui.js';
+import { renderMessage, numbered } from './ui.js';
 import { claimMessage, helpMessage } from './contact.js';
 import { statusLabels, money } from './admin/render.js';
 
@@ -26,17 +26,17 @@ export class BuyerNavigation {
     const notice = value => say(value, this.config.adminJid, context);
     const save = async state => { c.session = { ...state, buyerUiVersion: 3 }; await api.session(c.buyer, c.session); };
     const action = (name, extra = {}) => api.action(c.order.id, { action: name, key: `${event}:${name}`, actor: c.buyer, ...extra });
-    const info = (value, title = 'MAZY STORE · INFO') => say(grid(title, [value]));
+    const info = (value, title = 'MAZY STORE · INFO') => say(renderMessage(title, [value]));
     const help = () => say(helpMessage(this.adminNumber, c.order));
     const active = async () => {
       if (!c.order) return info('Tidak ada pesanan aktif. Ketik /menu untuk belanja atau /chat untuk menghubungi admin.');
-      await say(grid('MAZY STORE · PESANAN', [orderText(c.order), c.order.status === 'awaiting_payment' ? 'Setelah membayar, ketik /done.' : c.order.status === 'awaiting_proof' ? 'Kirim foto bukti pembayaran.' : c.order.status === 'review' ? 'Bukti sedang diperiksa admin.' : 'Penyerahan barang dilakukan melalui chat pribadi admin.']));
+      await say(renderMessage('MAZY STORE · PESANAN', [orderText(c.order), c.order.status === 'awaiting_payment' ? 'Setelah membayar, ketik /done.' : c.order.status === 'awaiting_proof' ? 'Kirim foto bukti pembayaran.' : c.order.status === 'review' ? 'Bukti sedang diperiksa admin.' : 'Penyerahan barang dilakukan melalui chat pribadi admin.']));
       if (c.order.status === 'awaiting_payment') await this.transport.payment(c.buyer, c.order, `${event}:payment`);
       if (c.order.status === 'processing') await say(claimMessage(this.adminNumber, c.order));
     };
     const options = async (title, sections, state, entries) => {
       await save({ ...state, options: entries });
-      return say(grid(title, [...sections, numbered(entries), 'Balas angka untuk memilih.']));
+      return say(renderMessage(title, [...sections, numbered(entries), 'Balas angka untuk memilih.']));
     };
     const menu = async () => {
       const { categories, variants } = await api.catalog();
@@ -63,7 +63,7 @@ export class BuyerNavigation {
       const v = (await api.catalog()).variants.find(row => row.id === state.variantId && !row.archived);
       if (!v?.ready) { await menu(); return info('Varian sedang Kosong. Pilih produk lain.'); }
       await save({ stage: 'quantity', variantId: v.id, categoryId: v.category_id, price: v.price, terms: v.terms });
-      return say(grid('MAZY STORE · JUMLAH', [`${v.name}\nHarga satuan: ${money(v.price)}\n${v.terms}`, `Masukkan kuantitas 1–${this.config.maxQuantity}.`, '/kembali: pilih varian\n/menu: katalog utama']));
+      return say(renderMessage('MAZY STORE · JUMLAH', [`${v.name}\nHarga satuan: ${money(v.price)}\n${v.terms}`, `Masukkan kuantitas 1–${this.config.maxQuantity}.`, '/kembali: pilih varian\n/menu: katalog utama']));
     };
     if (command === '/menu' || command === '/start') return menu();
     if (command === '/pesanan') return active();
@@ -74,30 +74,30 @@ export class BuyerNavigation {
       if (c.order.status === 'awaiting_payment') {
         const updated = await action('cancel');
         await save({ stage: 'menu' });
-        await notice(grid('ORDER DIBATALKAN BUYER', [orderText(updated)]));
+        await notice(renderMessage('ORDER DIBATALKAN BUYER', [orderText(updated)]));
         return info('Pesanan dibatalkan. Jika sudah terlanjur membayar, ketik /chat dan kirim bukti langsung ke admin.');
       }
       if (c.order.status === 'refund_pending') return info('Refund sedang ditangani admin. Ketik /chat untuk link kontak.');
       const updated = await action('request_cancel');
-      await notice(grid('PERMINTAAN PEMBATALAN', [orderText(updated), 'Periksa pembayaran sebelum menutup pesanan.']));
+      await notice(renderMessage('PERMINTAAN PEMBATALAN', [orderText(updated), 'Periksa pembayaran sebelum menutup pesanan.']));
       return info('Permintaan pembatalan diteruskan ke admin. Pesanan belum dibatalkan sampai diperiksa.');
     }
     if (command === '/done') {
       if (!c.order) return info('Belum ada order aktif. Ketik /menu.');
       if (c.order.status === 'awaiting_payment') {
         const updated = await action('done');
-        await notice(grid('MENUNGGU BUKTI BAYAR', [orderText(updated), 'Buyer mengetik /done. Tunggu foto bukti dan periksa uang masuk.', 'Reply bukti: /setujui\nSetelah penyerahan: /selesaikan']));
+        await notice(renderMessage('MENUNGGU BUKTI BAYAR', [orderText(updated), 'Buyer mengetik /done. Tunggu foto bukti dan periksa uang masuk.', 'Reply bukti: /setujui\nSetelah penyerahan: /selesaikan']));
       }
       else if (c.order.status !== 'awaiting_proof') return active();
-      return say(grid('MAZY STORE · BUKTI BAYAR', [`ID Pesanan: ${c.order.id}`, 'Kirim foto bukti pembayaran. Pembayaran baru dianggap lunas setelah diperiksa admin.']));
+      return say(renderMessage('MAZY STORE · BUKTI BAYAR', [`ID Pesanan: ${c.order.id}`, 'Kirim foto bukti pembayaran. Pembayaran baru dianggap lunas setelah diperiksa admin.']));
     }
     if (message.image) {
       if (c.order?.status === 'awaiting_payment') return info('Ketik /done terlebih dahulu, kemudian kirim ulang foto bukti pembayaran.');
       if (c.order?.status === 'awaiting_proof' || c.order?.status === 'review' && c.order.proof_relay !== 'sent') {
         const buffer = await message.image();
         if (c.order.status === 'awaiting_proof') await action('submit_proof');
-        let caption = grid('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nProduk: ${c.order.product}\nVarian: ${c.order.variant}\nJumlah: ${c.order.quantity}\nTotal: ${money(c.order.total)}`, 'Reply foto ini:\n/setujui\n/tolakbukti alasan\n/selesaikan'], 22);
-        if (caption.length > 1000) caption = grid('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nTotal: ${money(c.order.total)}`, 'Reply: /setujui\n/selesaikan'], 22);
+        let caption = renderMessage('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nProduk: ${c.order.product}\nVarian: ${c.order.variant}\nJumlah: ${c.order.quantity}\nTotal: ${money(c.order.total)}`, 'Reply foto ini:\n/setujui\n/tolakbukti alasan\n/selesaikan']);
+        if (caption.length > 1000) caption = renderMessage('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nTotal: ${money(c.order.total)}`, 'Reply: /setujui\n/selesaikan']);
         await this.transport.image(this.config.adminJid, buffer, caption, context);
         await action('proof_sent');
         return info('Bukti berhasil diteruskan. Menunggu verifikasi pembayaran oleh admin.');
@@ -122,9 +122,9 @@ export class BuyerNavigation {
         return info('Harga atau ketentuan berubah. Masukkan ulang kuantitas untuk menggunakan harga terbaru.');
       }
       const order = await api.createOrder({ key: event, buyer: c.buyer, variantId: v.id, quantity: Number(text), expectedPrice: state.price, expectedTerms: state.terms, qrisVersion: createHash('sha256').update(this.config.qris).digest('hex') });
-      await say(grid('MAZY STORE · PESANAN', [orderText(order)]));
+      await say(renderMessage('MAZY STORE · PESANAN', [orderText(order)]));
       await this.transport.payment(c.buyer, order, `${event}:payment`);
-      await say(grid('ORDER BARU', [orderText(order), 'Buyer belum diverifikasi membayar.']), this.config.adminJid, { ...context, orderId: order.id });
+      await say(renderMessage('ORDER BARU', [orderText(order), 'Buyer belum diverifikasi membayar.']), this.config.adminJid, { ...context, orderId: order.id });
       await save({ stage: 'ordered' });
       return;
     }

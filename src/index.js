@@ -10,7 +10,7 @@ import { StoreBot } from './bot.js';
 import { createApp } from './server.js';
 import { collectImage } from './media.js';
 import { resolveIncoming } from './incoming.js';
-import { grid } from './ui.js';
+import { renderMessage } from './ui.js';
 
 const config = loadConfig();
 const logger = pino({ level: config.logLevel, redact: ['*.creds', '*.keys', '*.message', '*.text', '*.caption', '*.authorization'] });
@@ -72,7 +72,7 @@ async function processMessage(m, sock) {
     const mediaError = error.message?.startsWith('Gambar terlalu besar');
     if (!known && !mediaError) { status.database = false; logger.warn('Permintaan gagal. Periksa koneksi WA/API; konten pesan tidak dicatat.'); }
     const errorText = known || mediaError ? error.message : buyer === config.adminJid && !selfChat ? 'Permintaan admin belum berhasil. Ketik /admin untuk membuka ulang menu; periksa status order sebelum mengulang tindakan.' : 'Permintaan belum berhasil dipastikan. Periksa /pesanan sebelum mengulang. Jika bukti bayar belum sampai ke admin, kirim ulang atau gunakan /chat untuk kontak langsung.';
-    await transport.text(jid, grid('MAZY STORE · INFO', [errorText]), `${seenId}:error`);
+    await transport.text(jid, renderMessage('MAZY STORE · INFO', [errorText]), `${seenId}:error`);
   } finally {
     local.markSeen(seenId);
   }

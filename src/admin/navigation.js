@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { screen, orderDetails, variantDetails, money, phone, date, statusLabels } from './render.js';
 import { orderActions, actionLabels, requiresReason, executeOrderAction, notifyOrderAction } from './actions.js';
 import { buyerContact, waLink } from '../contact.js';
-import { grid } from '../ui.js';
+import { renderMessage } from '../ui.js';
 
 const TTL = 30 * 60000;
 const UI_VERSION = 5;
@@ -36,7 +36,7 @@ export class AdminNavigation {
       : error.status === 401 || error.status === 403 ? 'Worker menolak akses. Periksa kesesuaian API_SECRET di panel dan Worker.'
       : error.status >= 500 ? 'Worker melaporkan gangguan layanan. Periksa status pesanan sebelum mengulang.'
       : error.message;
-    return this.transport.text(message.jid, grid('ADMIN · PERMINTAAN GAGAL', [`Kode: ${code}${error.status ? `\nHTTP: ${error.status}` : ''}`, detail, 'Ketik /admin untuk membuka ulang menu. Periksa status pesanan sebelum mengulang tindakan.']), `${message.jid}:${message.id}:admin:failure`);
+    return this.transport.text(message.jid, renderMessage('ADMIN · PERMINTAAN GAGAL', [`Kode: ${code}${error.status ? `\nHTTP: ${error.status}` : ''}`, detail, 'Ketik /admin untuk membuka ulang menu. Periksa status pesanan sebelum mengulang tindakan.']), `${message.jid}:${message.id}:admin:failure`);
   }
 
   async handle(message, owner) {
@@ -57,7 +57,7 @@ export class AdminNavigation {
         try { ref = await this.api.message(owner.buyer, message.quotedId); }
         catch (error) {
           if (error.status !== 404) throw error;
-          return await ctx.send(message.jid, grid('ADMIN · KONTAK', ['Referensi tidak dikenali. Tidak ada pesan yang diteruskan.', 'Buka /admin → Pesanan & pembayaran → pilih pesanan → Hubungi buyer.']), null);
+          return await ctx.send(message.jid, renderMessage('ADMIN · KONTAK', ['Referensi tidak dikenali. Tidak ada pesan yang diteruskan.', 'Buka /admin → Pesanan & pembayaran → pilih pesanan → Hubungi buyer.']), null);
         }
         if (ref.kind !== 'menu') return await this.contact(ctx, ref.buyer, ref.order_id);
         if (!ctx.state || ctx.state.uiVersion !== UI_VERSION || Date.now() - ctx.state.at > TTL) return await this.show(ctx, { screen: 'home' }, 'Menu diperbarui atau sesi berakhir. Mulai dari sini.');
@@ -97,12 +97,12 @@ export class AdminNavigation {
   async contact(ctx, buyer, orderId = null) {
     const content = orderId
       ? buyerContact(await this.api.order(orderId))
-      : grid('ADMIN · HUBUNGI BUYER', [`Nomor: ${phone(buyer)}`, 'Klik link untuk chat langsung. Pesan dan gambar tidak diteruskan oleh bot.']) + '\n\n' + waLink(buyer, 'Halo, saya admin Mazy Store.');
+      : renderMessage('ADMIN · HUBUNGI BUYER', [`Nomor: ${phone(buyer)}`, 'Klik link untuk chat langsung. Pesan dan gambar tidak diteruskan oleh bot.']) + '\n\n' + waLink(buyer, 'Halo, saya admin Mazy Store.');
     await ctx.send(ctx.message.jid, content, null);
   }
 
   async shortcut(ctx, command, reason, event) {
-    const reply = text => ctx.send(ctx.message.jid, grid('ADMIN · SHORTCUT', [text]), null);
+    const reply = text => ctx.send(ctx.message.jid, renderMessage('ADMIN · SHORTCUT', [text]), null);
     if (!ctx.message.quotedId) return reply(`Reply notifikasi order atau bukti pembayaran dengan ${command}${requiresReason(shortcuts[command]) ? ' alasan' : ''}. ID tidak perlu diketik.`);
     let ref = this.local.messageReference?.(ctx.message.jid, ctx.message.quotedId);
     if (!ref) {
@@ -118,7 +118,7 @@ export class AdminNavigation {
     const pending = { action, reason: requiresReason(action) ? reason : '', key: `${event}:order:${action}`, version: order.version };
     const updated = await executeOrderAction(this.api, order, pending);
     await notifyOrderAction(updated, pending, ctx.send, this.adminNumber);
-    return ctx.send(ctx.message.jid, grid('ADMIN · PESANAN', [`ID: ${updated.id}\nBuyer: ${phone(updated.buyer)}\nStatus: ${statusLabels[updated.status]}`, 'Perubahan berlaku hanya untuk ID ini.']), { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay', purpose: 'transaction' });
+    return ctx.send(ctx.message.jid, renderMessage('ADMIN · PESANAN', [`ID: ${updated.id}\nBuyer: ${phone(updated.buyer)}\nStatus: ${statusLabels[updated.status]}`, 'Perubahan berlaku hanya untuk ID ini.']), { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay', purpose: 'transaction' });
   }
 
   async apply(ctx, state) {

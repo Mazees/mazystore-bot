@@ -86,7 +86,7 @@ Pastikan `/home/container`/folder project tetap tersimpan setelah restart. Panel
 
 ### Tampilan bersama buyer dan admin
 
-Caption gambar bukti/QRIS memakai frame 22 kolom agar garis tidak terlipat pada bubble foto. Menu buyer/admin, detail order, pembayaran, dan CLAIM memakai frame monospace dengan garis kiri, atas, pemisah, dan bawah saja. Tidak ada garis kanan atau spasi pengisi di ujung baris. Teks panjang tetap dibungkus otomatis, termasuk Unicode. Link WhatsApp berada di luar frame supaya mudah diklik. Pesan panjang dipecah menjadi beberapa frame.
+Menu buyer/admin, detail order, pembayaran, CLAIM, dan caption foto memakai judul tebal serta isi teks biasa. Nama pilihan diberi tebal dengan jarak antaritem; rincian dan petunjuk memakai teks regular. Tidak ada monospace, garis kotak, atau pemotongan berdasarkan lebar kolom. WhatsApp menyesuaikan pembungkusan teks di layar; ID dan tautan tidak dipotong manual. Pesan panjang dipecah dengan mempertahankan judul dan link yang utuh.
 
 Semua pilihan memakai **1, 2, 3, ... sesuai urutan layar**, termasuk Kembali, Beranda, dan pindah halaman. Tidak ada nomor navigasi khusus 0, 00, 6/7, atau 8/9. Saat mengisi nama, harga, alasan, atau kuantitas, gunakan `/kembali`; angka adalah data, bukan navigasi. `/admin` membuka beranda admin dan `/menu` membuka katalog buyer (atau beranda jika pengirim adalah admin).
 
@@ -206,6 +206,6 @@ npm run check
 npm test
 ```
 
-Tes mencakup Worker nyata dalam simulator D1, checkout kuantitas, idempotensi, persaingan satu order aktif, snapshot harga, pembayaran, refund/pembatalan, CLAIM, pencegahan relay, penomoran dinamis, grid Unicode, QRIS encode/decode, auth SQLite, retry, TTL, batas media, serta Express.
+Tes mencakup Worker nyata dalam simulator D1, checkout kuantitas, idempotensi, persaingan satu order aktif, snapshot harga, pembayaran, refund/pembatalan, CLAIM, pencegahan relay, penomoran dinamis, format bold/regular dan Unicode, QRIS encode/decode, auth SQLite, retry, TTL, batas media, serta Express.
 
 Sebelum membuka toko: scan QR hasil dengan dua aplikasi pembayaran dan pastikan merchant/nominal benar, lakukan pilot dua buyer bersamaan, verifikasi bukti di WA admin, uji link CLAIM dan chat langsung ke admin, restart panel, dan pastikan sesi tetap ada. Pairing WA, uji pembayaran nyata, serta kapasitas hosting memerlukan lingkungan/akun milik toko dan belum digantikan tes lokal.
