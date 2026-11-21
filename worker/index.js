@@ -69,7 +69,7 @@ async function route(request, env) {
   if (resource === 'catalog' && method === 'GET') {
     const [categories, variants] = await Promise.all([
       db.prepare('SELECT * FROM categories WHERE deleted=0 ORDER BY id').all(),
-      db.prepare(`SELECT v.* FROM variants v JOIN categories c ON c.id=v.category_id WHERE c.deleted=0 ${url.searchParams.get('archived') === '1' ? '' : 'AND v.archived=0'} ORDER BY v.category_id,v.id`).all(),
+      db.prepare('SELECT v.* FROM variants v JOIN categories c ON c.id=v.category_id WHERE c.deleted=0 AND v.archived=0 ORDER BY v.category_id,v.id').all(),
     ]);
     return { categories: categories.results, variants: variants.results };
   }
@@ -146,13 +146,15 @@ async function route(request, env) {
       await update('price=?', v.price);
     } else if (v.mode === 'ready') {
       if (typeof v.ready !== 'boolean') fail(400, 'Status ready tidak valid.');
-      if (v.ready && current.archived) fail(409, 'Pulihkan varian dari arsip sebelum membuka penjualan.');
+      if (v.ready && current.archived) fail(409, 'Varian lama tidak tersedia. Tambahkan varian baru.');
       await update('ready=?', Number(v.ready));
     } else if (v.mode === 'name' || v.mode === 'terms') {
       if (!text(v.value, v.mode === 'name' ? 120 : 2000)) fail(400, 'Nilai tidak valid.');
       await update(`${v.mode}=?`, v.value);
-    } else if (v.mode === 'archive' || v.mode === 'restore') {
-      await update('archived=?,ready=0', v.mode === 'archive' ? 1 : 0);
+    } else if (v.mode === 'delete') {
+      const result = await sql(db, 'DELETE FROM variants WHERE id=? AND version=?', v.id, current.version).run();
+      if (!result.meta.changes) fail(409, 'Varian berubah. Buka detail terbaru.');
+      return { id: current.id, category_id: current.category_id, deleted: true };
     } else if (v.mode === 'add' || v.mode === 'edit') {
       if (!Number.isSafeInteger(v.categoryId) || v.categoryId < 1 || !text(v.name, 120) || !text(v.terms, 2000) || !Number.isSafeInteger(v.price) || v.price < 1 || v.price > 9999999999) fail(400, 'Detail varian tidak valid.');
       if (!await sql(db, 'SELECT id FROM categories WHERE id=? AND deleted=0', v.categoryId).first()) fail(400, 'Katalog tidak ditemukan.');
@@ -186,7 +188,7 @@ async function route(request, env) {
         throw error;
       }
       const result = await sql(db, 'SELECT * FROM orders WHERE id=?', orderId).first();
-      if (!result) fail(409, 'Varian, harga, atau ketentuan berubah. Buka /menu dan periksa ulang.');
+      if (!result) fail(409, 'Varian, harga, atau deskripsi berubah. Buka /menu dan periksa ulang.');
       return result;
     }
     if (method === 'GET' && !id) return { orders: (await db.prepare("SELECT * FROM orders WHERE status NOT IN ('completed','cancelled','refunded') ORDER BY created_at LIMIT 100").all()).results };

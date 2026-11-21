@@ -36,24 +36,25 @@ export class BuyerNavigation {
     };
     const options = async (title, sections, state, entries) => {
       await save({ ...state, options: entries });
-      return say(renderMessage(title, [...sections, numbered(entries), 'Balas angka untuk memilih.']));
+      return say(renderMessage(title, [...sections, numbered(entries), `*${state.stage === 'menu' ? 'CARA PILIH PRODUK' : 'PILIHAN'}*\nBalas angka *1 sampai ${entries.length}* untuk memilih.\n/chat - Hubungi admin`]));
     };
     const menu = async () => {
       const { categories, variants } = await api.catalog();
       const entries = categories.map(cat => {
         const rows = variants.filter(v => v.category_id === cat.id && !v.archived);
         const ready = rows.filter(v => v.ready);
-        return { type: 'category', id: cat.id, label: `${cat.name}\n${ready.length ? `Mulai ${money(Math.min(...ready.map(v => v.price)))}` : 'Belum tersedia'}` };
+        const prices = ready.length > 2 ? `Mulai ${money(Math.min(...ready.map(v => v.price)))}` : ready.map(v => `${v.name} · ${money(v.price)}`).join('\n');
+        return { type: 'category', id: cat.id, label: `${cat.name}\n${prices || 'Belum tersedia'}` };
       });
       entries.push({ type: 'order', label: 'Pesanan saya' }, { type: 'help', label: 'Hubungi admin' });
-      return options('MAZY STORE · MENU', ['KATALOG PRODUK DIGITAL & AI'], { stage: 'menu' }, entries);
+      return options('MAZY STORE · MENU', ['*KATALOG PRODUK DIGITAL & AI*'], { stage: 'menu' }, entries);
     };
     const variants = async (categoryId, page = 0) => {
       const catalog = await api.catalog();
       const cat = catalog.categories.find(row => row.id === categoryId);
       if (!cat) return menu();
       const rows = catalog.variants.filter(v => v.category_id === categoryId && !v.archived);
-      const entries = rows.slice(page * 5, page * 5 + 5).map(v => ({ type: 'variant', id: v.id, label: `${v.name}\n${money(v.price)} · ${v.ready ? 'Ready' : 'Kosong'}\n${v.terms}` }));
+      const entries = rows.slice(page * 5, page * 5 + 5).map(v => ({ type: 'variant', id: v.id, label: `${v.name}\n${money(v.price)} · ${v.ready ? 'Ready' : 'Kosong'}\n*Deskripsi*\n${v.terms}` }));
       if (page > 0) entries.push({ type: 'page', page: page - 1, label: 'Halaman sebelumnya' });
       if ((page + 1) * 5 < rows.length) entries.push({ type: 'page', page: page + 1, label: 'Halaman berikutnya' });
       entries.push({ type: 'home', label: 'Kembali ke katalog' }, { type: 'help', label: 'Hubungi admin' });
@@ -63,7 +64,7 @@ export class BuyerNavigation {
       const v = (await api.catalog()).variants.find(row => row.id === state.variantId && !row.archived);
       if (!v?.ready) { await menu(); return info('Varian sedang Kosong. Pilih produk lain.'); }
       await save({ stage: 'quantity', variantId: v.id, categoryId: v.category_id, price: v.price, terms: v.terms });
-      return say(renderMessage('MAZY STORE · JUMLAH', [`${v.name}\nHarga satuan: ${money(v.price)}\n${v.terms}`, `Masukkan kuantitas 1–${this.config.maxQuantity}.`, '/kembali: pilih varian\n/menu: katalog utama']));
+      return say(renderMessage('MAZY STORE · JUMLAH', [`${v.name}\nHarga satuan: ${money(v.price)}\n*Deskripsi*\n${v.terms}`, `Masukkan kuantitas 1–${this.config.maxQuantity}.`, '/kembali: pilih varian\n/menu: katalog utama']));
     };
     if (command === '/menu' || command === '/start') return menu();
     if (command === '/pesanan') return active();
@@ -119,7 +120,7 @@ export class BuyerNavigation {
       if (!v?.ready) { await menu(); return info('Varian sedang Kosong.'); }
       if (v.price !== state.price || v.terms !== state.terms) {
         await quantity(state);
-        return info('Harga atau ketentuan berubah. Masukkan ulang kuantitas untuk menggunakan harga terbaru.');
+        return info('Harga atau deskripsi berubah. Masukkan ulang kuantitas untuk menggunakan harga terbaru.');
       }
       const order = await api.createOrder({ key: event, buyer: c.buyer, variantId: v.id, quantity: Number(text), expectedPrice: state.price, expectedTerms: state.terms, qrisVersion: createHash('sha256').update(this.config.qris).digest('hex') });
       await say(renderMessage('MAZY STORE · PESANAN', [orderText(order)]));

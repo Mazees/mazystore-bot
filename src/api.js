@@ -31,7 +31,7 @@ export class StoreApi {
     if (!response.ok) throw new ApiError(response.status, typeof result.error === 'string' ? result.error : 'Layanan toko tidak tersedia.');
     return result;
   }
-  catalog(includeArchived = false) { return this.call(`/catalog${includeArchived ? '?archived=1' : ''}`); }
+  catalog() { return this.call('/catalog'); }
   category(data) { return this.call('/categories', 'POST', data); }
   categoryAction(id, data) { return this.call(`/categories/${id}`, 'POST', data); }
   adminSummary() { return this.call('/admin/summary'); }

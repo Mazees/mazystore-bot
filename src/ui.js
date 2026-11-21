@@ -3,12 +3,15 @@ const bold = value => `*${clean(value).replace(/\*/g, '')}*`;
 
 export function renderMessage(title, sections = []) {
   const body = sections.filter(value => value !== undefined && value !== null).map(clean).filter(Boolean);
-  return [bold(title), ...body].join('\n\n');
+  const header = `┏━━━━━━━━━━━━━━━━━━━┓\n┃  ${bold(clean(title).replaceAll(' · ', ' | '))}\n┗━━━━━━━━━━━━━━━━━━━┛`;
+  return header + (body.length ? '\n\n' + body.join('\n\n────────────────────\n\n') : '');
 }
 
 export const numbered = choices => choices.map((choice, i) => {
   const [title, ...details] = clean(typeof choice === 'string' ? choice : choice.label).split('\n');
-  return [`${i + 1}. ${bold(title)}`, ...details].join('\n');
+  const label = bold(`${String(i + 1).padStart(2, '0')} | ${title}`);
+  if (!details.length) return `${i === choices.length - 1 ? '└' : '├'}  ${label}`;
+  return [`┌  ${label}`, ...details.map((line, index) => `${index === details.length - 1 ? '└' : '│'}  ${line}`)].join('\n');
 }).join('\n\n');
 
 // Keep titles, links, and ordinary words together across WhatsApp messages.

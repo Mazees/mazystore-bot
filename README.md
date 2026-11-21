@@ -86,11 +86,11 @@ Pastikan `/home/container`/folder project tetap tersimpan setelah restart. Panel
 
 ### Tampilan bersama buyer dan admin
 
-Menu buyer/admin, detail order, pembayaran, CLAIM, dan caption foto memakai judul tebal serta isi teks biasa. Nama pilihan diberi tebal dengan jarak antaritem; rincian dan petunjuk memakai teks regular. Tidak ada monospace, garis kotak, atau pemotongan berdasarkan lebar kolom. WhatsApp menyesuaikan pembungkusan teks di layar; ID dan tautan tidak dipotong manual. Pesan panjang dipecah dengan mempertahankan judul dan link yang utuh.
+Menu buyer/admin, detail order, pembayaran, CLAIM, dan caption foto mengikuti gaya Mazy Store: header dekoratif pendek, judul tebal, pemisah bagian, serta pilihan bernomor 01, 02, dan seterusnya. Pilihan produk memakai blok terbuka ┌ / │ / └; rincian dan petunjuk memakai teks regular. Tidak memakai monospace atau pemotongan lebar kolom. Input 1 maupun 01 memilih item yang sama. Harga, jumlah katalog dan label pilihan tetap berasal dari database. WhatsApp membungkus teks sesuai layar; ID dan link tetap utuh.
 
 Semua pilihan memakai **1, 2, 3, ... sesuai urutan layar**, termasuk Kembali, Beranda, dan pindah halaman. Tidak ada nomor navigasi khusus 0, 00, 6/7, atau 8/9. Saat mengisi nama, harga, alasan, atau kuantitas, gunakan `/kembali`; angka adalah data, bukan navigasi. `/admin` membuka beranda admin dan `/menu` membuka katalog buyer (atau beranda jika pengirim adalah admin).
 
-Jumlah varian nonarsip hanya ditampilkan pada menu admin di samping kategori, misalnya `CHATGPT API KEY (0)`. Varian tutup tetap termasuk hitungan tersebut; status Buka/Tutup ditampilkan pada varian masing-masing. Katalog dan judul kategori buyer tidak menampilkan hitungan `(n)`; buyer melihat harga varian Buka atau Belum tersedia. Kategori kosong pada admin menampilkan pilihan berurutan: Tambah varian, Lihat arsip, Kembali, Beranda.
+Jumlah varian hanya ditampilkan pada menu admin di samping kategori, misalnya `CHATGPT API KEY (0)`. Varian Ready dan Kosong termasuk hitungan tersebut. Buyer melihat harga varian Ready atau Belum tersedia, tanpa hitungan `(n)`. Kategori kosong pada admin menampilkan Tambah varian, Ubah nama katalog, Hapus katalog, Kembali, dan Beranda.
 
 ### Buyer dan CLAIM
 
@@ -103,7 +103,7 @@ Jumlah varian nonarsip hanya ditampilkan pada menu admin di samping kategori, mi
 | `/chat` | Link WA pribadi admin; tidak mengaktifkan relay |
 | `/kembali` | Kembali dari isian ke langkah sebelumnya |
 
-Jumlah 1–100 per order (bisa diturunkan melalui `MAX_QUANTITY`). Satu buyer satu order aktif; tidak ada kedaluwarsa otomatis. Harga dan ketentuan disalin ke order. Setelah buyer mengisi kuantitas, order dan QR pembayaran langsung dibuat. Jika harga/ketentuan berubah dari yang terakhir ditampilkan, buyer mendapat rincian terbaru dan diminta mengisi ulang jumlah.
+Jumlah 1–100 per order (bisa diturunkan melalui `MAX_QUANTITY`). Satu buyer satu order aktif; tidak ada kedaluwarsa otomatis. Harga dan deskripsi disalin ke order. Setelah buyer mengisi kuantitas, order dan QR pembayaran langsung dibuat. Jika harga/deskripsi berubah dari yang terakhir ditampilkan, buyer mendapat rincian terbaru dan diminta mengisi ulang jumlah.
 
 Setelah admin memeriksa uang masuk dan menyetujui pembayaran, status menjadi **Diproses** dan buyer menerima link `wa.me` menuju `ADMIN_NUMBER` dengan pesan:
 
@@ -121,7 +121,7 @@ Untuk pertanyaan sebelum membayar, `/chat` membuka WA admin dengan pesan pertany
 Ketik **`/admin` atau `/menu`** dari nomor `ADMIN_NUMBER`:
 
 1. **Pesanan & pembayaran**: verifikasi, pesanan Diproses, pembatalan, refund, serta seluruh riwayat.
-2. **Kelola katalog**: pilih Tambah katalog untuk membuat kategori produk baru, atau pilih katalog yang ada → varian → ubah nama/harga/ketentuan, buka/tutup, arsip/pulihkan, atau tambah varian dengan kode otomatis.
+2. **Kelola katalog**: pilih Tambah katalog untuk membuat kategori produk baru, atau pilih katalog yang ada → varian → ubah nama/harga/deskripsi, Ready/Kosong, hapus permanen, atau tambah varian dengan kode otomatis.
 3. **Status bot & pengiriman**: koneksi WA/D1, antrean, dan pengiriman meragukan yang dapat dikirim ulang setelah pemeriksaan.
 4. **Broadcast pelanggan**: tulis pesan teks; setelah dikirim, pesan langsung masuk antrean tanpa konfirmasi tambahan. Penerima adalah pelanggan yang tercatat di D1; nomor admin dan bot dikecualikan. Tidak mengimpor riwayat chat WhatsApp lama.
 
@@ -147,7 +147,7 @@ Periksa uang masuk sebelum /setujui. Pesan tanpa referensi order, reply ke menu,
 
 Bukti pembayaran ada pada gambar notifikasi WA, bukan arsip database. Pilihan **Hubungi buyer** menampilkan link chat langsung. Balasan teks/gambar ke notifikasi, kartu tujuan lama, atau bukti pembayaran **tidak diteruskan**; bot menampilkan kontak langsung. Submenu Percakapan buyer dihapus. Perintah pengelolaan lama seperti `/harga` dan `/setujui` hanya memberi petunjuk menuju submenu.
 
-Status varian adalah **Ready / Kosong**. Varian baru dan varian hasil pemulihan arsip selalu Kosong. Lengkapi ketentuan sebelum menandainya Ready. Arsip varian menyembunyikannya dari buyer tanpa mengubah snapshot order lama.
+Status varian adalah **Ready / Kosong**. Varian baru selalu Kosong. Lengkapi Deskripsi sebelum menandainya Ready. Hapus varian permanen langsung menghapus baris varian dari database tanpa arsip/pemulihan. Order lama menyimpan ID, nama, harga, dan deskripsi saat pembelian sehingga tetap dapat diproses sampai selesai. Field internal terms tetap digunakan untuk kompatibilitas data lama; label tampilan memakai Deskripsi.
 
 **Menambah produk/katalog utama:** `/admin` → Kelola katalog → Tambah katalog → ketik nama. Nama maksimal 80 karakter; spasi dirapikan dan huruf disimpan kapital. Nama yang sudah ada ditolak. Setelah disimpan, kamu langsung masuk ke katalog baru dengan pilihan Tambah varian. Katalog baru otomatis muncul pada buyer sebagai Belum tersedia sampai ada varian yang dibuka. Katalog tidak lagi terbatas pada tujuh kategori awal; penambahan katalog tidak membuat atau membuka varian otomatis. `/kembali` membatalkan langkah isian tanpa menambah data.
 
@@ -161,7 +161,7 @@ Order dan QRIS tersebut **asli**, bukan sandbox. Tidak perlu mentransfer uang un
 
 ### Memperbarui instalasi yang sudah berjalan
 
-Untuk pengelolaan katalog, terapkan migrasi sampai `0004_catalog_management.sql` lalu deploy Worker **sebelum** memperbarui bot panel. Jalankan dari laptop yang sudah login Cloudflare:
+Untuk pengelolaan katalog, terapkan migrasi sampai `0005_permanent_variant_delete.sql` lalu deploy Worker **sebelum** memperbarui bot panel. Jalankan dari laptop yang sudah login Cloudflare:
 
 ```sh
 npm run db:remote
