@@ -16,10 +16,15 @@ export class Transport {
     if (content.urlButton) {
       const { label, url } = content.urlButton;
       const message = generateWAMessageFromContent(jid, {
-        interactiveMessage: {
-          body: { text: content.text },
-          nativeFlowMessage: { buttons: [{ name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: label, url, merchant_url: url }) }] },
-        },
+        viewOnceMessage: { message: {
+          messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
+          interactiveMessage: {
+            header: { title: 'MAZY STORE', hasMediaAttachment: false },
+            body: { text: content.text },
+            footer: { text: 'Uji tombol v2' },
+            nativeFlowMessage: { messageParamsJson: '', buttons: [{ name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: label, url, merchant_url: url }) }] },
+          },
+        } },
       }, { userJid: socket.user?.id, messageId });
       await socket.relayMessage(jid, message.message, {
         messageId,
@@ -72,8 +77,14 @@ export class Transport {
           if (!sent?.key?.id) throw new Error('No WA message id');
           this.store.saveMessage(sent.key.id, sent.message);
           this.store.setStatus(job.id, job.payload.context ? 'mapping' : 'sent', sent.key.id);
-        } catch {
+          if (job.payload.kind === 'url_button') await this.text(job.jid, renderMessage('ADMIN · HASIL UJI TOMBOL V2', ['Relay tombol selesai tanpa error. Ini belum membuktikan pesan diterima atau tombol tampil.', 'Jika kartu tombol tidak terlihat di HP, format uji v2 belum bekerja pada koneksi ini. Gunakan link cadangan.']), `${job.id}:result`);
+        } catch (error) {
           this.store.setStatus(job.id, 'uncertain');
+          if (job.payload.kind === 'url_button') {
+            const status = error?.output?.statusCode;
+            await this.text(job.jid, renderMessage('ADMIN · HASIL UJI TOMBOL V2', [`Relay tombol gagal. Kode: BUTTON_RELAY_FAILED${Number.isInteger(status) ? `\nHTTP: ${status}` : ''}`, 'Pengiriman tidak diulang otomatis. Gunakan link cadangan.']), `${job.id}:result`);
+            continue;
+          }
           break;
         }
       }

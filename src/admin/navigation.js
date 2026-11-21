@@ -55,8 +55,8 @@ export class AdminNavigation {
       if (['/admin','/menu','/start'].includes(command)) return await this.show(ctx, { screen: 'home' });
       if (command === '/tesbutton') {
         const url = waLink(this.adminNumber, 'TES TOMBOL CLAIM Mazy Store. Ini hanya uji tombol, bukan klaim pesanan.');
-        await ctx.send(message.jid, renderMessage('ADMIN · UJI TOMBOL', ['Pesan berikutnya mencoba tombol CLAIM pembelian. Tombol membuka chat admin dengan pesan uji, tanpa mengubah pesanan.', `Jika tombol tidak terlihat, link cadangan:\n${url}`, 'Pengiriman ke WhatsApp belum memastikan tombol tampil. Periksa langsung pada aplikasi WA.']), null);
-        return await this.transport.urlButton(message.jid, 'Uji tombol CLAIM pembelian Mazy Store. Ini bukan klaim pesanan.', 'CLAIM pembelian', url, `${event}:test-button`);
+        await ctx.send(message.jid, renderMessage('ADMIN · UJI TOMBOL V2', ['Pesan berikutnya mencoba tombol CLAIM pembelian dengan format v2. Tombol membuka chat admin dengan pesan uji, tanpa mengubah pesanan.', `Jika tombol tidak terlihat, link cadangan:\n${url}`, 'Setelah percobaan, bot mengirim hasil relay dalam pesan teks. Periksa kartu tombol langsung pada aplikasi WA HP.']), null);
+        return await this.transport.urlButton(message.jid, 'Uji tombol CLAIM pembelian v2. Ini bukan klaim pesanan.', 'CLAIM pembelian', url, `${event}:test-button`);
       }
       if (shortcuts[command] && (command !== '/batal' || message.quotedId)) return await this.shortcut(ctx, command, text.slice(command.length).trim(), event);
       if (command === '/post') {
