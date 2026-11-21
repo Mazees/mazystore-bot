@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { screen, orderDetails, variantDetails, money, phone, date, statusLabels } from './render.js';
+import { screen, orderDetails, variantDetails, money, phone, date, statusLabels, orderStatus } from './render.js';
 import { orderActions, actionLabels, requiresReason, executeOrderAction, notifyOrderAction } from './actions.js';
 import { buyerContact, waLink } from '../contact.js';
 import { renderMessage } from '../ui.js';
 import { Testimonials } from '../testimonials.js';
 
 const TTL = 30 * 60000;
-const UI_VERSION = 8;
+const UI_VERSION = 9;
 const shortcuts = { '/setujui': 'approve', '/selesaikan': 'complete', '/selesai': 'complete', '/tolakbukti': 'reject_proof', '/batal': 'cancel', '/batalkan': 'cancel', '/refund': 'refund', '/refundselesai': 'refund_complete', '/lanjutkan': 'clear_cancel' };
 const legacy = new Set(['/produk','/tambahvarian','/ubahvarian','/harga','/ready','/order','/setujui','/tolakbukti','/selesai','/batalkan','/refund','/refundselesai','/lanjutkan','/balas','/gagalkirim','/ulang','/batalsetup']);
 const groupLabels = { all: 'Semua pesanan', review: 'Menunggu verifikasi', processing: 'Sedang diproses', cancellation: 'Permintaan pembatalan', refund: 'Refund', ...statusLabels };
@@ -135,14 +135,14 @@ export class AdminNavigation {
     if (!ref?.order_id || ref.kind === 'menu') return reply('Pesan yang dibalas tidak memiliki referensi order. Reply notifikasi order atau foto bukti pembayaran dari bot.');
     const order = await this.api.order(ref.order_id);
     if (order.buyer !== ref.buyer) return reply('Referensi buyer tidak cocok dengan order. Tidak ada perubahan.');
-    const action = shortcuts[command];
-    if (!orderActions(order).some(option => option.id === action)) return reply(`ID: ${order.id}\nStatus: ${statusLabels[order.status]}\nTindakan ${command} tidak tersedia untuk status ini. Tidak ada perubahan.`);
+    const action = command === '/selesai' && order.status === 'refund_pending' ? 'refund_complete' : shortcuts[command];
+    if (!orderActions(order).some(option => option.id === action)) return reply(`ID: ${order.id}\nStatus: ${orderStatus(order)}\nTindakan ${command} tidak tersedia untuk status ini. Tidak ada perubahan.`);
     if (requiresReason(action) && (!reason || reason.length > 2000)) return reply(`Reply pesan yang sama dengan ${command} alasan (1–2000 karakter).`);
     const pending = { action, reason: requiresReason(action) ? reason : '', key: `${event}:order:${action}`, version: order.version };
     const updated = await executeOrderAction(this.api, order, pending);
     await notifyOrderAction(this.api, updated, pending, ctx.send, this.adminNumber);
     if (action === 'complete') await this.postTestimonial(ctx, updated);
-    return ctx.send(ctx.message.jid, renderMessage('ADMIN · PESANAN', [`ID: ${updated.id}\nBuyer: ${phone(updated.buyer)}\nStatus: ${statusLabels[updated.status]}`, updated.status === 'processing' ? '/selesaikan jika pesanan sudah selesai di proses' : ['awaiting_payment','awaiting_proof','review'].includes(updated.status) ? 'Reply /batal untuk membatalkan pesanan.' : '']), { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay', purpose: 'transaction' });
+    return ctx.send(ctx.message.jid, renderMessage('ADMIN · PESANAN', [`ID: ${updated.id}\nBuyer: ${phone(updated.buyer)}\nStatus: ${orderStatus(updated)}`, updated.status === 'processing' ? '/selesaikan jika pesanan sudah selesai di proses\n/refund alasan - Tawarkan refund ke buyer' : updated.status === 'refund_pending' ? updated.refund_accepted ? 'Buyer sudah menyetujui refund. Kembalikan uang, lalu reply /selesai.' : 'Tunggu buyer mengetik /setujui sebelum mengembalikan uang.' : ['awaiting_payment','awaiting_proof','review'].includes(updated.status) ? 'Reply /batal untuk membatalkan pesanan.' : '']), { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay', purpose: 'transaction' });
   }
 
   async apply(ctx, state) {

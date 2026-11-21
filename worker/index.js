@@ -214,15 +214,18 @@ async function route(request, env) {
         reject_proof: { from: ['review'], to: 'awaiting_proof', admin: true, extra: ",proof_relay='none',cancel_requested=0" },
         approve: { from: ['review'], to: 'processing', admin: true },
         complete: { from: ['processing'], to: 'completed', admin: true },
-        refund: { from: ['processing'], to: 'refund_pending', admin: true },
+        refund: { from: ['processing'], to: 'refund_pending', admin: true, extra: ',refund_accepted=0,cancel_requested=0' },
+        accept_refund: { from: ['refund_pending'], to: 'refund_pending', buyer: true, extra: ',refund_accepted=1' },
         refund_complete: { from: ['refund_pending'], to: 'refunded', admin: true },
         cancel: { from: ['awaiting_payment','awaiting_proof','review'], to: 'cancelled', admin, extra: ',cancel_requested=0' },
-        request_cancel: { from: ['awaiting_proof','review','processing'], to: order.status === 'processing' ? 'processing' : 'cancelled', admin: false, extra: order.status === 'processing' ? ',cancel_requested=1' : ',cancel_requested=0' },
+        request_cancel: { from: ['awaiting_proof','review'], to: 'cancelled', admin: false, extra: ',cancel_requested=0' },
         clear_cancel: { from: ['awaiting_proof','review','processing'], to: order.status, admin: true, extra: ',cancel_requested=0' },
       };
       const t = transitions[data.action];
-      if (!t || (t.admin && !admin)) fail(403, 'Tindakan tidak diizinkan.');
+      if (!t || (t.admin && !admin) || (t.buyer && admin)) fail(403, 'Tindakan tidak diizinkan.');
       if (!t.from.includes(order.status)) fail(409, 'Status order tidak sesuai untuk tindakan ini.');
+      if (data.action === 'accept_refund' && order.refund_accepted) fail(409, 'Refund sudah disetujui buyer.');
+      if (data.action === 'refund_complete' && !order.refund_accepted) fail(409, 'Tunggu persetujuan refund dari buyer sebelum mengembalikan uang.');
       if (data.action === 'approve' && order.cancel_requested) fail(409, 'Selesaikan permintaan pembatalan terlebih dahulu.');
       if (['reject_proof','refund'].includes(data.action) || (admin && data.action === 'cancel')) {
         if (!text(data.reason)) fail(400, 'Alasan wajib diisi.');

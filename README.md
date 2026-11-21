@@ -99,7 +99,7 @@ Jumlah varian hanya ditampilkan pada menu admin di samping kategori, misalnya `C
 | `/menu` | Katalog produk; mengikuti kategori yang ditambahkan admin |
 | `/pesanan` | Status order aktif; kirim ulang QR sebelum bayar atau link CLAIM saat Diproses |
 | `/done` | Menyatakan sudah membayar; bot meminta foto bukti, belum lunas |
-| `/batal` | Langsung batalkan selama pembayaran belum disetujui, termasuk setelah `/done`, saat verifikasi, atau setelah bukti ditolak; order Diproses tetap meminta penanganan admin/refund |
+| `/batal` | Langsung batalkan selama pembayaran belum disetujui, termasuk setelah `/done`, saat verifikasi, atau setelah bukti ditolak; order Diproses tidak bisa dibatalkan dan harus melalui refund |
 | `/chat` | Link WA pribadi admin; tidak mengaktifkan relay |
 | `/kembali` | Kembali dari isian ke langkah sebelumnya |
 
@@ -164,15 +164,17 @@ Shortcut admin: **reply notifikasi order, pemberitahuan /done, foto bukti, atau 
 | /tolakbukti alasan | Minta buyer mengirim bukti ulang |
 | /batal [alasan] | Batalkan order yang belum disetujui; tanpa alasan memakai catatan Dibatalkan admin. |
 | /batalkan alasan | Alias pembatalan dengan alasan wajib |
-| /refund alasan | Mulai refund untuk order berbayar |
-| /refundselesai | Tandai uang refund sudah dikembalikan |
+| /refund alasan | Tawarkan refund untuk order Diproses, menunggu persetujuan buyer |
+| /selesai | Selesaikan pesanan Diproses, atau tutup refund setelah buyer setuju dan uang dikembalikan |
 | /lanjutkan | Tutup permintaan pembatalan sesuai kesepakatan |
 
 Reply /batal diperlakukan sebagai shortcut pembatalan. /batal tanpa reply tetap kembali pada navigasi/form admin. Buyer dapat membatalkan sendiri pada status Menunggu bayar, Menunggu bukti, dan Verifikasi pembayaran; flag permintaan pembatalan lama ikut dibersihkan. Petunjuk /batal ditampilkan pada status pesanan buyer, setelah /done, setelah foto diteruskan, saat bukti ditolak, serta pada notifikasi order/foto ke admin. Pengiriman bukti ulang dan penolakan bukti membersihkan flag pembatalan lama agar pembayaran yang valid dapat disetujui. Request pembatalan dari bot versi lama pada status belum disetujui langsung membatalkan order; tidak membuat flag menunggu lagi. Order yang sudah berstatus Dibatalkan tidak dapat dihidupkan kembali dengan mengirim bukti. Order yang telah disetujui tidak bisa dibatalkan langsung dan harus melalui penanganan admin/refund.
 
+Alur refund: admin reply `/refund alasan` → buyer menerima nominal dan alasan → buyer mengetik `/setujui` di chat bot → admin menerima notifikasi persetujuan → admin mengembalikan uang melalui chat pribadi → admin reply `/selesai` atau memilih tindakan di detail order. Sebelum buyer setuju, API dan menu menolak penyelesaian refund. Persetujuan buyer belum berarti uang dikembalikan; order tetap aktif sampai admin menutup refund. `/setujui` dari nomor admin tetap untuk verifikasi pembayaran; dari buyer hanya menyetujui penawaran refund aktif. Migrasi `0006_refund_consent.sql` menyimpan persetujuan; refund lama yang belum selesai juga menunggu persetujuan buyer lewat `/pesanan`. Setelah pembayaran disetujui, `/batal` dan request pembatalan dari bot lama ditolak tanpa mengubah order.
+
 Periksa uang masuk sebelum /setujui. Pesan tanpa referensi order, reply ke menu, dan tindakan yang tidak sesuai status ditolak. /selesai juga tersedia sebagai alias /selesaikan. Lima order dapat diproses dengan reply ke masing-masing pesannya; tidak ada penyelesaian massal. Petunjuk /setujui dan /tolakbukti ada di bukti pembayaran. Petunjuk /selesaikan ada di pesan ADMIN | PESANAN setelah persetujuan; reply pesan hasil tersebut untuk menyelesaikan ID yang sama. Referensi lokal dapat dipakai saat pencatatan pesan ke D1 masih mengantre.
 
-Bukti pembayaran ada pada gambar notifikasi WA, bukan arsip database. Pilihan **Hubungi buyer** menampilkan link chat langsung. Balasan teks/gambar ke notifikasi, kartu tujuan lama, atau bukti pembayaran **tidak diteruskan**; bot menampilkan kontak langsung. Submenu Percakapan buyer dihapus. Perintah pengelolaan lama seperti `/harga` dan `/setujui` hanya memberi petunjuk menuju submenu.
+Bukti pembayaran ada pada gambar notifikasi WA, bukan arsip database. Pilihan **Hubungi buyer** menampilkan link chat langsung. Balasan teks/gambar ke notifikasi, kartu tujuan lama, atau bukti pembayaran **tidak diteruskan**; bot menampilkan kontak langsung. Submenu Percakapan buyer dihapus. Perintah pengelolaan lama seperti `/harga` memberi petunjuk menuju submenu.
 
 Status varian adalah **Ready / Kosong**. Varian baru selalu Kosong. Lengkapi Deskripsi sebelum menandainya Ready. Hapus varian permanen langsung menghapus baris varian dari database tanpa arsip/pemulihan. Order lama menyimpan ID, nama, harga, dan deskripsi saat pembelian sehingga tetap dapat diproses sampai selesai. Field internal terms tetap digunakan untuk kompatibilitas data lama; label tampilan memakai Deskripsi.
 

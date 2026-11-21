@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { renderMessage, numbered } from './ui.js';
 import { claimMessage, helpMessage } from './contact.js';
-import { statusLabels, money } from './admin/render.js';
+import { statusLabels, money, orderStatus } from './admin/render.js';
 
 export const labels = statusLabels;
-const orderText = o => `ID Pesanan: ${o.id}\nProduk: ${o.product}\nVarian: ${o.variant}\nJumlah: ${o.quantity}\nHarga satuan: ${money(o.unit_price)}\nTotal: ${money(o.total)}\nStatus: ${labels[o.status]}${o.cancel_requested ? '\nAda permintaan pembatalan.' : ''}`;
+const orderText = o => `ID Pesanan: ${o.id}\nProduk: ${o.product}\nVarian: ${o.variant}\nJumlah: ${o.quantity}\nHarga satuan: ${money(o.unit_price)}\nTotal: ${money(o.total)}\nStatus: ${orderStatus(o)}${o.cancel_requested ? '\nAda permintaan pembatalan.' : ''}`;
 
 export class BuyerNavigation {
   constructor(api, transport, config) { this.api = api; this.transport = transport; this.config = config; this.adminNumber = config.adminNumber || config.adminJid.split('@')[0]; }
@@ -30,7 +30,7 @@ export class BuyerNavigation {
     const help = () => say(helpMessage(this.adminNumber));
     const active = async () => {
       if (!c.order) return info('Tidak ada pesanan aktif. Ketik /menu untuk belanja atau /chat untuk menghubungi admin.');
-      await say(renderMessage('MAZY STORE · PESANAN', [orderText(c.order), c.order.status === 'awaiting_payment' ? 'Setelah membayar, ketik /done.' : c.order.status === 'awaiting_proof' ? 'Kirim foto bukti pembayaran.' : c.order.status === 'review' ? 'Bukti sedang diperiksa admin.' : 'Penyerahan barang dilakukan melalui chat pribadi admin.', ['awaiting_payment','awaiting_proof','review'].includes(c.order.status) ? '/batal - Batalkan pesanan langsung' : '']));
+      await say(renderMessage('MAZY STORE · PESANAN', [orderText(c.order), c.order.status === 'awaiting_payment' ? 'Setelah membayar, ketik /done.' : c.order.status === 'awaiting_proof' ? 'Kirim foto bukti pembayaran.' : c.order.status === 'review' ? 'Bukti sedang diperiksa admin.' : c.order.status === 'refund_pending' ? c.order.refund_accepted ? 'Refund sudah kamu setujui. Tunggu admin mengembalikan uang.\n/chat - Hubungi admin' : 'Admin menawarkan refund. Uang belum dikembalikan.\n/setujui - Setujui refund agar admin mengembalikan uang\n/chat - Hubungi admin jika belum sepakat' : 'Penyerahan barang dilakukan melalui chat pribadi admin.', ['awaiting_payment','awaiting_proof','review'].includes(c.order.status) ? '/batal - Batalkan pesanan langsung' : '']));
       if (c.order.status === 'awaiting_payment') await this.transport.payment(c.buyer, c.order, `${event}:payment`);
       if (c.order.status === 'processing') await say(await claimMessage(api, this.adminNumber, c.order));
     };
@@ -76,10 +76,14 @@ export class BuyerNavigation {
         await notice(renderMessage('ORDER DIBATALKAN BUYER', [orderText(updated)]));
         return info('Pesanan dibatalkan. Jika sudah terlanjur membayar, ketik /chat dan kirim bukti langsung ke admin.');
       }
-      if (c.order.status === 'refund_pending') return info('Refund sedang ditangani admin. Ketik /chat untuk link kontak.');
-      const updated = await action('request_cancel');
-      await notice(renderMessage('PERMINTAAN PEMBATALAN', [orderText(updated), 'Periksa pembayaran sebelum menutup pesanan.']));
-      return info('Permintaan pembatalan diteruskan ke admin. Pesanan belum dibatalkan sampai diperiksa.');
+      return info('Pembayaran sudah disetujui sehingga pesanan tidak bisa dibatalkan. Refund harus ditawarkan admin dan disetujui buyer.\n/pesanan - Lihat status refund\n/chat - Hubungi admin');
+    }
+    if (command === '/setujui') {
+      if (!c.order || c.order.status !== 'refund_pending') return info('Belum ada penawaran refund untuk disetujui. Ketik /pesanan untuk melihat status.');
+      if (c.order.refund_accepted) return info('Refund sudah kamu setujui. Tunggu admin mengembalikan uang.\n/chat - Hubungi admin');
+      const updated = await action('accept_refund', { expectedVersion: c.order.version });
+      await notice(renderMessage('ADMIN · REFUND', [orderText(updated), 'Buyer sudah menyetujui refund. Kembalikan uang melalui chat pribadi buyer, lalu reply pesan ini:\n/selesai - Tandai uang sudah dikembalikan']));
+      return info('Refund sudah kamu setujui. Uang belum dikembalikan; tunggu admin memproses pengembalian uang.\n/chat - Hubungi admin');
     }
     if (command === '/done') {
       if (!c.order) return info('Belum ada order aktif. Ketik /menu.');
@@ -109,7 +113,7 @@ export class BuyerNavigation {
       if (c.session.stage === 'quantity') return variants(c.session.categoryId);
       return menu();
     }
-    if (command.startsWith('/')) return info('Perintah tersedia:\n/menu: katalog\n/pesanan: status order\n/done: sudah membayar\n/batal: pembatalan\n/chat: link WA admin');
+    if (command.startsWith('/')) return info('Perintah tersedia:\n/menu: katalog\n/pesanan: status order\n/done: sudah membayar\n/batal: batalkan sebelum pembayaran disetujui\n/setujui: setujui penawaran refund\n/chat: link WA admin');
     if (c.session.buyerUiVersion !== 4) return menu();
     const state = c.session;
     if (state.stage === 'quantity' && !c.order) {
