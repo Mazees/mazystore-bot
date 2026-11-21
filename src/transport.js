@@ -1,6 +1,7 @@
 import { generateDynamicQris, renderQris } from './qris.js';
 import { generateMessageIDV2 } from 'baileys';
 import { renderMessage, splitMessage } from './ui.js';
+import { sendNewsletterImage } from './newsletter-image.js';
 
 export class Transport {
   constructor(store, api, config) { this.store = store; this.api = api; this.config = config; this.socket = null; this.draining = false; this.mapping = false; this.nextBroadcastAt = 0; }
@@ -11,6 +12,7 @@ export class Transport {
     if (!socket) throw new Error('WhatsApp belum tersambung.');
     const messageId = generateMessageIDV2(socket.user?.id);
     this.store.markOutgoing(messageId);
+    if (jid.endsWith('@newsletter') && Buffer.isBuffer(content.image)) return sendNewsletterImage(socket, jid, content, messageId);
     return socket.sendMessage(jid, content, { messageId });
   }
   async text(jid, text, id, context = null) {

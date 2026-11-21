@@ -80,13 +80,14 @@ export class Testimonials {
       catch { return { status: 'failed', message: 'Gambar testimoni belum dapat dibaca. Pastikan assets/testimoni.png ikut diperbarui di panel, lalu coba /post kembali.' }; }
       sending = true;
       const sent = await bounded(() => this.transport.send(settings.jid, { image, caption: text, mimetype: 'image/png' }));
-      if (!sent?.key?.id) throw new Error('Pengiriman belum terkonfirmasi.');
-      return { status: 'sent', message: `✓ Testimoni dikirim ke ${settings.name}.` };
+      if (!sent?.key?.id || !/^[1-9]\d*$/.test(String(sent.key.server_id || ''))) throw new Error('Posting belum dikonfirmasi server.');
+      return { status: 'sent', message: `✓ WhatsApp mengonfirmasi posting ke ${settings.name}.\nID posting: ${sent.key.server_id}` };
     } catch (error) {
       if (error.accessDenied && settings) {
         this.store.authSet(SETTINGS_KEY, { ...settings, enabled: false });
         return { status: 'failed', message: 'Bot bukan lagi admin saluran. Autotesti dinonaktifkan; jadikan bot admin lalu aktifkan kembali.' };
       }
+      if (error.postNotSent || error.serverRejected) return { status: 'failed', message: error.message };
       return sending
         ? { status: 'uncertain', message: 'Pengiriman testimoni belum dapat dipastikan; posting mungkin sudah masuk. Periksa saluran sebelum mengulang /post. Tidak ada pengiriman ulang otomatis.' }
         : { status: 'failed', message: 'Testimoni gagal diperiksa/dikirim. Periksa koneksi dan akses admin saluran, lalu coba /post dari detail order Selesai.' };
