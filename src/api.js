@@ -1,3 +1,5 @@
+import { claimLink } from './claim-link.js';
+
 export class ApiError extends Error {
   constructor(status, message, code = 'API_HTTP') {
     super(message); this.name = 'ApiError'; this.status = status; this.code = code;
@@ -41,6 +43,7 @@ export class StoreApi {
   session(buyer, state) { return this.call(`/customers/${encodeURIComponent(buyer)}/session`, 'PUT', state); }
   createOrder(data) { return this.call('/orders', 'POST', data); }
   order(id) { return this.call(`/orders/${encodeURIComponent(id)}`); }
+  async claimLink(orderId, adminNumber) { return { url: await claimLink(this.url, orderId, adminNumber, this.secret) }; }
   orders() { return this.call('/orders'); }
   action(id, data) { return this.call(`/orders/${encodeURIComponent(id)}/actions`, 'POST', data); }
   variant(data) { return this.call('/variants', 'POST', data); }

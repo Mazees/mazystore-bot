@@ -1,3 +1,6 @@
+import { claimDestination } from '../src/contact.js';
+import { verifyClaimLink } from '../src/claim-link.js';
+
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -257,7 +260,19 @@ async function route(request, env) {
 
 export default {
   async fetch(request, env) {
-    try { return json(await route(request, env)); }
+    try {
+      const path = new URL(request.url).pathname;
+      if (path.startsWith('/c/')) {
+        if (!['GET','HEAD'].includes(request.method)) return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD', 'Cache-Control': 'no-store' } });
+        const match = path.match(/^\/c\/([A-Za-z0-9-]{1,64})\/([1-9]\d{7,14})\/([A-Za-z0-9_-]{43})$/);
+        if (!match || !await verifyClaimLink(match[1], match[2], match[3], env.API_SECRET)) fail(404, 'Link tidak ditemukan.');
+        const order = await sql(env.DB, 'SELECT * FROM orders WHERE id=?', match[1]).first();
+        if (!order) fail(404, 'Link tidak ditemukan.');
+        if (order.status !== 'processing') fail(410, 'Link CLAIM sudah tidak aktif. Hubungi admin melalui /chat di bot.');
+        return new Response(null, { status: 302, headers: { Location: claimDestination(match[2], order), 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow' } });
+      }
+      return json(await route(request, env));
+    }
     catch (error) { return json({ error: error.status ? error.message : 'Layanan database bermasalah. Coba lagi.' }, error.status || 503); }
   },
 };

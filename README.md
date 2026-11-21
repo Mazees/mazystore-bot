@@ -105,7 +105,7 @@ Jumlah varian hanya ditampilkan pada menu admin di samping kategori, misalnya `C
 
 Jumlah 1–100 per order (bisa diturunkan melalui `MAX_QUANTITY`). Satu buyer satu order aktif; tidak ada kedaluwarsa otomatis. Harga dan deskripsi disalin ke order. Setelah buyer mengisi kuantitas, order dan QR pembayaran langsung dibuat. Jika harga/deskripsi berubah dari yang terakhir ditampilkan, buyer mendapat rincian terbaru dan diminta mengisi ulang jumlah.
 
-Setelah admin memeriksa uang masuk dan menyetujui pembayaran, status menjadi **Diproses** dan buyer menerima link `wa.me` menuju `ADMIN_NUMBER` dengan pesan:
+Setelah admin memeriksa uang masuk dan menyetujui pembayaran, status menjadi **Diproses** dan buyer menerima link pendek Worker pada bagian atas pesan. Saat diklik, Worker mengarahkan ke `wa.me` menuju `ADMIN_NUMBER` dengan pesan lengkap berikut:
 
 ```text
 ┏━━━━━━━━━━━━━━━━━━━┓
@@ -121,6 +121,8 @@ Total: Rp35.000
 
 ────────────────────
 ```
+
+Shortlink dibuat langsung di bot menggunakan HMAC-SHA256 dari API_SECRET, ID order, dan nomor admin. Tidak ada tabel shortlink, penyimpanan URL baru, layanan pemendek eksternal, atau migrasi D1. Route publik /c/... memverifikasi tanda tangan, membaca snapshot order yang sudah ada, lalu melakukan redirect 302; link hanya aktif selama status Diproses. Mengubah ID order atau nomor admin membuat tanda tangan tidak valid. Respons tidak di-cache dan tidak mengonsumsi link. Rotasi API_SECRET membatalkan link lama; /pesanan menghasilkan link baru. Deploy Worker sebelum memperbarui bot panel.
 
 Link CLAIM tidak diberikan untuk order belum dibayar atau masih menunggu verifikasi. `/pesanan` dapat mengirim ulang link selama Diproses. Penyerahan barang, OTP, kredensial, dan bantuan dilakukan **langsung di chat pribadi buyer dengan admin**, bukan melalui bot. Setelah seluruh barang diserahkan, admin menandai pesanan Selesai di submenu order. Status Diproses tetap menahan pembelian baru sampai selesai atau refund ditutup.
 

@@ -140,7 +140,7 @@ export class AdminNavigation {
     if (requiresReason(action) && (!reason || reason.length > 2000)) return reply(`Reply pesan yang sama dengan ${command} alasan (1–2000 karakter).`);
     const pending = { action, reason: requiresReason(action) ? reason : '', key: `${event}:order:${action}`, version: order.version };
     const updated = await executeOrderAction(this.api, order, pending);
-    await notifyOrderAction(updated, pending, ctx.send, this.adminNumber);
+    await notifyOrderAction(this.api, updated, pending, ctx.send, this.adminNumber);
     if (action === 'complete') await this.postTestimonial(ctx, updated);
     return ctx.send(ctx.message.jid, renderMessage('ADMIN · PESANAN', [`ID: ${updated.id}\nBuyer: ${phone(updated.buyer)}\nStatus: ${statusLabels[updated.status]}`, updated.status === 'processing' ? '/selesaikan jika pesanan sudah selesai di proses' : ['awaiting_payment','awaiting_proof','review'].includes(updated.status) ? 'Reply /batal untuk membatalkan pesanan.' : '']), { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay', purpose: 'transaction' });
   }
@@ -394,7 +394,7 @@ export class AdminNavigation {
       const before = await this.api.order(s.orderId);
       if (before.version !== pending.version) return this.show(ctx, { screen: 'order', orderId: before.id, back: { screen: 'orders', filter: 'all' } }, 'Order berubah. Pilih ulang tindakan.');
       const updated = await executeOrderAction(this.api, before, pending);
-      await notifyOrderAction(updated, pending, ctx.send, this.adminNumber);
+      await notifyOrderAction(this.api, updated, pending, ctx.send, this.adminNumber);
       if (pending.action === 'complete') await this.postTestimonial(ctx, updated);
       return this.show(ctx, { screen: 'order', orderId: updated.id, back: { screen: 'orders', filter: 'all' } }, '✓ Perubahan tersimpan dan pemberitahuan buyer masuk antrean.');
     }

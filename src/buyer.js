@@ -32,7 +32,7 @@ export class BuyerNavigation {
       if (!c.order) return info('Tidak ada pesanan aktif. Ketik /menu untuk belanja atau /chat untuk menghubungi admin.');
       await say(renderMessage('MAZY STORE · PESANAN', [orderText(c.order), c.order.status === 'awaiting_payment' ? 'Setelah membayar, ketik /done.' : c.order.status === 'awaiting_proof' ? 'Kirim foto bukti pembayaran.' : c.order.status === 'review' ? 'Bukti sedang diperiksa admin.' : 'Penyerahan barang dilakukan melalui chat pribadi admin.', ['awaiting_payment','awaiting_proof','review'].includes(c.order.status) ? '/batal - Batalkan pesanan langsung' : '']));
       if (c.order.status === 'awaiting_payment') await this.transport.payment(c.buyer, c.order, `${event}:payment`);
-      if (c.order.status === 'processing') await say(claimMessage(this.adminNumber, c.order));
+      if (c.order.status === 'processing') await say(await claimMessage(api, this.adminNumber, c.order));
     };
     const options = async (title, sections, state, entries) => {
       await save({ ...state, options: entries });

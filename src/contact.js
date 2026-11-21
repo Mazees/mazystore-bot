@@ -6,15 +6,22 @@ export function waLink(number, message) {
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
-export function claimMessage(adminNumber, order) {
+export function claimDestination(adminNumber, order) {
   if (order.status !== 'processing') throw new Error('CLAIM hanya tersedia untuk pembayaran yang sudah disetujui dan sedang diproses.');
   const claim = renderMessage('CLAIM PEMBELIAN', [
     `ID: ${order.id}\nBuyer: ${order.buyer.split('@')[0]}\nProduk: ${order.product}\nVarian: ${order.variant}\nJumlah: ${order.quantity}\nTotal: Rp${Number(order.total).toLocaleString('id-ID')}`,
   ]) + '\n\n────────────────────';
+  return waLink(adminNumber, claim);
+}
+
+export async function claimMessage(api, adminNumber, order) {
+  if (order.status !== 'processing') throw new Error('CLAIM hanya tersedia untuk pembayaran yang sudah disetujui dan sedang diproses.');
+  const { url } = await api.claimLink(order.id, adminNumber);
   return renderMessage('MAZY STORE · CLAIM', [
-    `ID Pesanan: ${order.id}\nProduk: ${order.product}\nVarian: ${order.variant}\nJumlah: ${order.quantity}\nStatus: Diproses`,
-    'Pembayaran disetujui. Klik link di bawah untuk mengambil barang dan koordinasi OTP langsung dengan admin.',
-  ]) + '\n\n' + waLink(adminNumber, claim);
+    `Klik link untuk CLAIM ke admin:\n${url}`,
+    `ID Pesanan: ${order.id}\nProduk: ${order.product}\nVarian: ${order.variant}\nJumlah: ${order.quantity}\nTotal: Rp${Number(order.total).toLocaleString('id-ID')}\nStatus: Diproses`,
+    'Pembayaran disetujui. Link membuka WA admin dengan rincian CLAIM lengkap untuk penyerahan barang dan koordinasi OTP.',
+  ]);
 }
 
 export function helpMessage(adminNumber) {
