@@ -6,7 +6,7 @@ import { renderMessage } from '../ui.js';
 
 const TTL = 30 * 60000;
 const UI_VERSION = 6;
-const shortcuts = { '/setujui': 'approve', '/selesaikan': 'complete', '/selesai': 'complete', '/tolakbukti': 'reject_proof', '/batalkan': 'cancel', '/refund': 'refund', '/refundselesai': 'refund_complete', '/lanjutkan': 'clear_cancel' };
+const shortcuts = { '/setujui': 'approve', '/selesaikan': 'complete', '/selesai': 'complete', '/tolakbukti': 'reject_proof', '/batal': 'cancel', '/batalkan': 'cancel', '/refund': 'refund', '/refundselesai': 'refund_complete', '/lanjutkan': 'clear_cancel' };
 const legacy = new Set(['/produk','/tambahvarian','/ubahvarian','/harga','/ready','/order','/setujui','/tolakbukti','/selesai','/batalkan','/refund','/refundselesai','/lanjutkan','/balas','/gagalkirim','/ulang','/batalsetup']);
 const groupLabels = { all: 'Semua pesanan', review: 'Menunggu verifikasi', processing: 'Sedang diproses', cancellation: 'Permintaan pembatalan', refund: 'Refund', ...statusLabels };
 const locationKeys = ['screen','page','filter','categoryId','variantId','orderId','draft','step','pending','version','back'];
@@ -51,7 +51,7 @@ export class AdminNavigation {
     const command = text.split(/\s+/)[0].toLowerCase();
     try {
       if (['/admin','/menu','/start'].includes(command)) return await this.show(ctx, { screen: 'home' });
-      if (shortcuts[command]) return await this.shortcut(ctx, command, text.slice(command.length).trim(), event);
+      if (shortcuts[command] && (command !== '/batal' || message.quotedId)) return await this.shortcut(ctx, command, text.slice(command.length).trim(), event);
       if (message.quotedId) {
         let ref;
         try { ref = await this.api.message(owner.buyer, message.quotedId); }
@@ -102,6 +102,7 @@ export class AdminNavigation {
   }
 
   async shortcut(ctx, command, reason, event) {
+    if (command === '/batal' && !reason) reason = 'Dibatalkan admin.';
     const reply = text => ctx.send(ctx.message.jid, renderMessage('ADMIN · SHORTCUT', [text]), null);
     if (!ctx.message.quotedId) return reply(`Reply notifikasi order atau bukti pembayaran dengan ${command}${requiresReason(shortcuts[command]) ? ' alasan' : ''}. ID tidak perlu diketik.`);
     let ref = this.local.messageReference?.(ctx.message.jid, ctx.message.quotedId);
@@ -118,7 +119,7 @@ export class AdminNavigation {
     const pending = { action, reason: requiresReason(action) ? reason : '', key: `${event}:order:${action}`, version: order.version };
     const updated = await executeOrderAction(this.api, order, pending);
     await notifyOrderAction(updated, pending, ctx.send, this.adminNumber);
-    return ctx.send(ctx.message.jid, renderMessage('ADMIN · PESANAN', [`ID: ${updated.id}\nBuyer: ${phone(updated.buyer)}\nStatus: ${statusLabels[updated.status]}`, 'Perubahan berlaku hanya untuk ID ini.']), { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay', purpose: 'transaction' });
+    return ctx.send(ctx.message.jid, renderMessage('ADMIN · PESANAN', [`ID: ${updated.id}\nBuyer: ${phone(updated.buyer)}\nStatus: ${statusLabels[updated.status]}`, updated.status === 'processing' ? '/selesaikan jika pesanan sudah selesai di proses' : '']), { buyer: updated.buyer, orderId: updated.id, role: 'admin', kind: 'relay', purpose: 'transaction' });
   }
 
   async apply(ctx, state) {

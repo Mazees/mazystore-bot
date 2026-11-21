@@ -215,7 +215,7 @@ async function route(request, env) {
         complete: { from: ['processing'], to: 'completed', admin: true },
         refund: { from: ['processing'], to: 'refund_pending', admin: true },
         refund_complete: { from: ['refund_pending'], to: 'refunded', admin: true },
-        cancel: { from: admin ? ['awaiting_payment','awaiting_proof','review'] : ['awaiting_payment'], to: 'cancelled', admin },
+        cancel: { from: ['awaiting_payment','awaiting_proof','review'], to: 'cancelled', admin, extra: ',cancel_requested=0' },
         request_cancel: { from: ['awaiting_proof','review','processing'], to: order.status, admin: false, extra: ',cancel_requested=1' },
         clear_cancel: { from: ['awaiting_proof','review','processing'], to: order.status, admin: true, extra: ',cancel_requested=0' },
       };

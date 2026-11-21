@@ -99,7 +99,7 @@ Jumlah varian hanya ditampilkan pada menu admin di samping kategori, misalnya `C
 | `/menu` | Katalog produk; mengikuti kategori yang ditambahkan admin |
 | `/pesanan` | Status order aktif; kirim ulang QR sebelum bayar atau link CLAIM saat Diproses |
 | `/done` | Menyatakan sudah membayar; bot meminta foto bukti, belum lunas |
-| `/batal` | Batalkan sebelum `/done`; setelahnya minta pemeriksaan admin |
+| `/batal` | Langsung batalkan selama pembayaran belum disetujui, termasuk setelah `/done`, saat verifikasi, atau setelah bukti ditolak; order Diproses tetap meminta penanganan admin/refund |
 | `/chat` | Link WA pribadi admin; tidak mengaktifkan relay |
 | `/kembali` | Kembali dari isian ke langkah sebelumnya |
 
@@ -108,13 +108,23 @@ Jumlah 1–100 per order (bisa diturunkan melalui `MAX_QUANTITY`). Satu buyer sa
 Setelah admin memeriksa uang masuk dan menyetujui pembayaran, status menjadi **Diproses** dan buyer menerima link `wa.me` menuju `ADMIN_NUMBER` dengan pesan:
 
 ```text
-CLAIM
-ID Pesanan: MZ-XXXXXXXXXXXXXXXX
+┏━━━━━━━━━━━━━━━━━━━┓
+┃  *CLAIM PEMBELIAN*
+┗━━━━━━━━━━━━━━━━━━━┛
+
+ID: MZ-XXXXXXXXXXXXXXXX
+Buyer: 628xxxxxxxxxx
+Produk: GEMINI PLUS
+Varian: 6 bulan
+Jumlah: 1
+Total: Rp35.000
+
+────────────────────
 ```
 
 Link CLAIM tidak diberikan untuk order belum dibayar atau masih menunggu verifikasi. `/pesanan` dapat mengirim ulang link selama Diproses. Penyerahan barang, OTP, kredensial, dan bantuan dilakukan **langsung di chat pribadi buyer dengan admin**, bukan melalui bot. Setelah seluruh barang diserahkan, admin menandai pesanan Selesai di submenu order. Status Diproses tetap menahan pembelian baru sampai selesai atau refund ditutup.
 
-Untuk pertanyaan sebelum membayar, `/chat` membuka WA admin dengan pesan pertanyaan umum/order tanpa header CLAIM. Foto hanya diteruskan sebagai bukti pembayaran setelah `/done`; gambar bantuan dan pesan biasa tidak diteruskan. `/akhirichat` lama hanya memberi petunjuk kontak langsung. Mode chat dari sesi lama tidak mengaktifkan relay kembali.
+`/chat` membuka pesan Hubungi Admin dengan bantuan produk & pembayaran, tautan ke ADMIN_NUMBER, dan teks otomatis "Halo admin Mazy Store, saya ingin bertanya tentang produk.". Pesan ini tersedia pada semua status order; link CLAIM tetap tersedia melalui notifikasi persetujuan dan `/pesanan`. Foto hanya diteruskan sebagai bukti pembayaran setelah `/done`; gambar bantuan dan pesan biasa tidak diteruskan. `/akhirichat` lama hanya memberi petunjuk kontak langsung. Mode chat dari sesi lama tidak mengaktifkan relay kembali.
 
 ### Admin
 
@@ -138,12 +148,15 @@ Shortcut admin: **reply notifikasi order, pemberitahuan /done, foto bukti, atau 
 | /setujui | Setujui pembayaran yang sedang diverifikasi; kirim CLAIM |
 | /selesaikan | Selesaikan hanya ID tersebut setelah status Diproses |
 | /tolakbukti alasan | Minta buyer mengirim bukti ulang |
-| /batalkan alasan | Batalkan order yang belum disetujui |
+| /batal [alasan] | Batalkan order yang belum disetujui; tanpa alasan memakai catatan Dibatalkan admin. |
+| /batalkan alasan | Alias pembatalan dengan alasan wajib |
 | /refund alasan | Mulai refund untuk order berbayar |
 | /refundselesai | Tandai uang refund sudah dikembalikan |
 | /lanjutkan | Tutup permintaan pembatalan sesuai kesepakatan |
 
-Periksa uang masuk sebelum /setujui. Pesan tanpa referensi order, reply ke menu, dan tindakan yang tidak sesuai status ditolak. /selesai juga tersedia sebagai alias /selesaikan. Lima order dapat diproses dengan reply ke masing-masing pesannya; tidak ada penyelesaian massal. Referensi lokal dapat dipakai saat pencatatan pesan ke D1 masih mengantre.
+Reply /batal diperlakukan sebagai shortcut pembatalan. /batal tanpa reply tetap kembali pada navigasi/form admin. Buyer dapat membatalkan sendiri pada status Menunggu bayar, Menunggu bukti, dan Verifikasi pembayaran; flag permintaan pembatalan lama ikut dibersihkan. Order yang telah disetujui tidak bisa dibatalkan langsung dan harus melalui penanganan admin/refund.
+
+Periksa uang masuk sebelum /setujui. Pesan tanpa referensi order, reply ke menu, dan tindakan yang tidak sesuai status ditolak. /selesai juga tersedia sebagai alias /selesaikan. Lima order dapat diproses dengan reply ke masing-masing pesannya; tidak ada penyelesaian massal. Petunjuk /setujui dan /tolakbukti ada di bukti pembayaran. Petunjuk /selesaikan ada di pesan ADMIN | PESANAN setelah persetujuan; reply pesan hasil tersebut untuk menyelesaikan ID yang sama. Referensi lokal dapat dipakai saat pencatatan pesan ke D1 masih mengantre.
 
 Bukti pembayaran ada pada gambar notifikasi WA, bukan arsip database. Pilihan **Hubungi buyer** menampilkan link chat langsung. Balasan teks/gambar ke notifikasi, kartu tujuan lama, atau bukti pembayaran **tidak diteruskan**; bot menampilkan kontak langsung. Submenu Percakapan buyer dihapus. Perintah pengelolaan lama seperti `/harga` dan `/setujui` hanya memberi petunjuk menuju submenu.
 

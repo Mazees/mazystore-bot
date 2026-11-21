@@ -27,7 +27,7 @@ export class BuyerNavigation {
     const save = async state => { c.session = { ...state, buyerUiVersion: 3 }; await api.session(c.buyer, c.session); };
     const action = (name, extra = {}) => api.action(c.order.id, { action: name, key: `${event}:${name}`, actor: c.buyer, ...extra });
     const info = (value, title = 'MAZY STORE · INFO') => say(renderMessage(title, [value]));
-    const help = () => say(helpMessage(this.adminNumber, c.order));
+    const help = () => say(helpMessage(this.adminNumber));
     const active = async () => {
       if (!c.order) return info('Tidak ada pesanan aktif. Ketik /menu untuk belanja atau /chat untuk menghubungi admin.');
       await say(renderMessage('MAZY STORE · PESANAN', [orderText(c.order), c.order.status === 'awaiting_payment' ? 'Setelah membayar, ketik /done.' : c.order.status === 'awaiting_proof' ? 'Kirim foto bukti pembayaran.' : c.order.status === 'review' ? 'Bukti sedang diperiksa admin.' : 'Penyerahan barang dilakukan melalui chat pribadi admin.']));
@@ -72,7 +72,7 @@ export class BuyerNavigation {
     if (command === '/akhirichat') return info('Komunikasi sekarang langsung ke WA admin. Ketik /chat untuk link kontak, atau /menu untuk katalog.');
     if (command === '/batal') {
       if (!c.order) return info('Tidak ada pesanan aktif.');
-      if (c.order.status === 'awaiting_payment') {
+      if (['awaiting_payment','awaiting_proof','review'].includes(c.order.status)) {
         const updated = await action('cancel');
         await save({ stage: 'menu' });
         await notice(renderMessage('ORDER DIBATALKAN BUYER', [orderText(updated)]));
@@ -87,7 +87,7 @@ export class BuyerNavigation {
       if (!c.order) return info('Belum ada order aktif. Ketik /menu.');
       if (c.order.status === 'awaiting_payment') {
         const updated = await action('done');
-        await notice(renderMessage('MENUNGGU BUKTI BAYAR', [orderText(updated), 'Buyer mengetik /done. Tunggu foto bukti dan periksa uang masuk.', 'Reply bukti: /setujui\nSetelah penyerahan: /selesaikan']));
+        await notice(renderMessage('MENUNGGU BUKTI BAYAR', [orderText(updated), 'Buyer mengetik /done. Tunggu foto bukti dan periksa uang masuk.', 'Reply bukti: /setujui']));
       }
       else if (c.order.status !== 'awaiting_proof') return active();
       return say(renderMessage('MAZY STORE · BUKTI BAYAR', [`ID Pesanan: ${c.order.id}`, 'Kirim foto bukti pembayaran. Pembayaran baru dianggap lunas setelah diperiksa admin.']));
@@ -97,14 +97,14 @@ export class BuyerNavigation {
       if (c.order?.status === 'awaiting_proof' || c.order?.status === 'review' && c.order.proof_relay !== 'sent') {
         const buffer = await message.image();
         if (c.order.status === 'awaiting_proof') await action('submit_proof');
-        let caption = renderMessage('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nProduk: ${c.order.product}\nVarian: ${c.order.variant}\nJumlah: ${c.order.quantity}\nTotal: ${money(c.order.total)}`, 'Reply foto ini:\n/setujui\n/tolakbukti alasan\n/selesaikan']);
-        if (caption.length > 1000) caption = renderMessage('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nTotal: ${money(c.order.total)}`, 'Reply: /setujui\n/selesaikan']);
+        let caption = renderMessage('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nProduk: ${c.order.product}\nVarian: ${c.order.variant}\nJumlah: ${c.order.quantity}\nTotal: ${money(c.order.total)}`, 'Reply foto ini:\n/setujui\n/tolakbukti alasan']);
+        if (caption.length > 1000) caption = renderMessage('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nTotal: ${money(c.order.total)}`, 'Reply: /setujui']);
         await this.transport.image(this.config.adminJid, buffer, caption, context);
         await action('proof_sent');
         return info('Bukti berhasil diteruskan. Menunggu verifikasi pembayaran oleh admin.');
       }
       if (c.order?.status === 'review') return info('Bukti sudah diteruskan dan menunggu verifikasi. Ketik /chat untuk menghubungi admin secara langsung.');
-      return say(helpMessage(this.adminNumber, c.order));
+      return say(helpMessage(this.adminNumber));
     }
     if (command === '/kembali') {
       if (c.order) return menu();
