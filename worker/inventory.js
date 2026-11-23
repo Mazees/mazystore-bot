@@ -77,7 +77,7 @@ export async function inventoryRoute(request, db, path, bodyOf, hash) {
     if (data.mode === 'finish') {
       const key = `autodelivery:${id}`;
       const result = await db.batch([
-        sql(db,"UPDATE orders SET status='completed',updated_at=CURRENT_TIMESTAMP,version=version+1,last_action_key=? WHERE id=? AND status='processing' AND (SELECT COUNT(*) FROM deliveries WHERE order_id=?)=quantity AND NOT EXISTS(SELECT 1 FROM deliveries WHERE order_id=? AND state!='received')",key,id,id,id),
+        sql(db,"UPDATE orders SET status='completed',updated_at=CURRENT_TIMESTAMP,version=version+1,last_action_key=? WHERE id=? AND status='processing' AND (SELECT COUNT(*) FROM deliveries WHERE order_id=?)=quantity AND NOT EXISTS(SELECT 1 FROM deliveries WHERE order_id=? AND state NOT IN ('sent','received'))",key,id,id,id),
         sql(db,"INSERT OR IGNORE INTO order_actions(action_key,order_id,action,actor) SELECT ?,?,'auto_complete','bot' WHERE EXISTS(SELECT 1 FROM orders WHERE id=? AND last_action_key=?)",key,id,id,key),
       ]);
       return { completed: Boolean(result[0].meta.changes), order: await sql(db,'SELECT * FROM orders WHERE id=?',id).first() };

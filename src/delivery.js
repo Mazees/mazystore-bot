@@ -1,4 +1,4 @@
-import { generateMessageIDV2, jidNormalizedUser } from 'baileys';
+import { generateMessageIDV2 } from 'baileys';
 import { encryptStock, decryptStock } from './inventory.js';
 import { renderMessage } from './ui.js';
 import { Testimonials } from './testimonials.js';
@@ -6,21 +6,13 @@ import { Testimonials } from './testimonials.js';
 export class AutoDelivery {
   constructor(api, transport, local, config) {
     this.api=api;this.transport=transport;this.local=local;this.config=config;
-    this.running=false;this.targets=new Map();this.testimonials=new Testimonials(local,transport);
-  }
-  async receipt(key,status,socket) {
-    if (!key?.fromMe || !key.id || ![3,4,5].includes(status)) return;
-    let jid=jidNormalizedUser(key.remoteJidAlt || key.remoteJid || '');
-    if (jid.endsWith('@lid')) jid=jidNormalizedUser(await socket.signalRepository.lidMapping.getPNForLID(jid) || jid);
-    const target=this.targets.get(key.id) || this.local.deliveryTarget(key.id);
-    if (target?.buyer===jid) this.local.saveReceipt(key.id,jid);
+    this.running=false;this.testimonials=new Testimonials(local,transport);
   }
   async tick() {
     if(this.running || !this.transport.socket || this.transport.draining)return;
     this.running=true;
     try {
       const {orders}=await this.api.deliveryOrders();
-      this.targets.clear();
       for(const order of orders) {
         try {
         let {parts}=await this.api.deliveryParts(order.id);
@@ -36,8 +28,6 @@ export class AutoDelivery {
           ({parts}=await this.api.deliveryParts(order.id));
         }
         for(const part of parts) {
-          if(part.state!=='received')this.targets.set(part.wa_id,{buyer:order.buyer,orderId:order.id});
-          else this.local.setStatus(`delivery:${order.id}:${part.part}`,'received');
           if(part.state==='pending')this.local.enqueue(`delivery:${order.id}:${part.part}`,order.buyer,{
             kind:'delivery',orderId:order.id,part:part.part,waId:part.wa_id,text:decryptStock(part.payload,this.config.dataKey),
           },'pending',part.wa_id);
@@ -45,22 +35,12 @@ export class AutoDelivery {
             renderMessage('ADMIN · PENGIRIMAN BARANG',[`ID: ${order.id}\nBuyer: ${order.buyer.split('@')[0]}`,'Pengiriman barang belum dapat dipastikan. Periksa chat buyer sebelum menandai selesai atau memulai refund. Tidak ada kirim ulang otomatis.']),
             `delivery:${order.id}:${part.part}:uncertain`,{buyer:order.buyer,orderId:order.id,role:'admin',kind:'relay',purpose:'transaction'});
         }
-        for(const receipt of this.local.receipts()) {
-          const target=this.targets.get(receipt.wa_id);
-          if(target?.orderId!==order.id || target.buyer!==receipt.jid)continue;
-          await this.api.delivery(order.id,{mode:'received',waId:receipt.wa_id});
-          const part=parts.find(p=>p.wa_id===receipt.wa_id);
-          if(part)this.local.setStatus(`delivery:${order.id}:${part.part}`,'received');
-          this.targets.delete(receipt.wa_id);
-          this.local.removeReceipt(receipt.wa_id,receipt.jid);
-        }
         const result=await this.api.delivery(order.id,{mode:'finish'});
         if(result.completed) {
-          await this.transport.text(order.buyer,renderMessage('MAZY STORE · PESANAN',[`ID: ${order.id}\nStatus: Selesai`,'Seluruh barang telah diterima perangkat WhatsApp. /chat untuk bantuan.']),`delivery:${order.id}:completed`);
+          await this.transport.text(order.buyer,renderMessage('MAZY STORE · PESANAN',[`ID: ${order.id}\nStatus: Selesai`,'Seluruh barang telah dikirim oleh bot. /chat untuk bantuan.']),`delivery:${order.id}:completed`);
           await this.transport.text(this.config.adminJid,renderMessage('ADMIN · PESANAN',[`ID: ${order.id}\nStatus: Selesai`,'Penyerahan otomatis selesai.']),`delivery:${order.id}:admin-completed`,{buyer:order.buyer,orderId:order.id,role:'admin',kind:'relay',purpose:'transaction'});
           const testimonial=await this.testimonials.post(result.order);
           if(testimonial.status!=='disabled')await this.transport.text(this.config.adminJid,renderMessage('ADMIN · AUTOTESTI',[`ID: ${order.id}`,testimonial.message]),`delivery:${order.id}:testimoni`);
-          for(const part of parts)this.targets.delete(part.wa_id);
         }
         } catch {
           await this.transport.text(this.config.adminJid,renderMessage('ADMIN · PENGIRIMAN BARANG',[

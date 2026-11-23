@@ -96,8 +96,6 @@ function connect() {
   socket = sock;
   let pairingRequested = false;
   sock.ev.on('creds.update', auth.saveCreds);
-  sock.ev.on('messages.update',updates=>{for(const {key,update} of updates)void delivery.receipt(key,update.status,sock).catch(()=>logger.warn('Receipt barang belum tersimpan.'));});
-  sock.ev.on('message-receipt.update',updates=>{for(const {key,receipt} of updates)if(receipt.receiptTimestamp || receipt.readTimestamp)void delivery.receipt(key,3,sock).catch(()=>logger.warn('Receipt barang belum tersimpan.'));});
   sock.ev.on('connection.update', async update => {
     try {
       if (update.qr && !auth.state.creds.registered) {
@@ -150,7 +148,7 @@ async function probe() {
   try { await api.catalog(); status.database = true; } catch { status.database = false; }
 }
 const drainTimer = setInterval(() => {
-  void delivery.tick().catch(()=>logger.warn('Penyerahan otomatis belum dapat diperiksa.'));
+  void delivery.tick().then(()=>transport.drain()).then(()=>delivery.tick()).catch(()=>logger.warn('Penyerahan otomatis belum dapat diperiksa.'));
   void transport.drain().catch(()=>logger.warn('Antrean pengiriman bermasalah.'));
 }, 2000);
 const probeTimer = setInterval(() => { void probe(); }, 30000);
