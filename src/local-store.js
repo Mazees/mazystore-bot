@@ -17,6 +17,7 @@ export class LocalStore {
       CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, created INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, jid TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created INTEGER NOT NULL, wa_id TEXT);
       CREATE TABLE IF NOT EXISTS retry_messages (id TEXT PRIMARY KEY, value TEXT NOT NULL, created INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS delivery_receipts (wa_id TEXT NOT NULL, jid TEXT NOT NULL, PRIMARY KEY(wa_id,jid));
     `);
     this.db.exec("UPDATE outbox SET status='uncertain' WHERE status='sending'");
     this.cleanup();
@@ -50,6 +51,15 @@ export class LocalStore {
   hasSeen(id) { return Boolean(this.db.prepare('SELECT 1 FROM seen WHERE id=?').get(id)); }
   markSeen(id) { this.db.prepare('INSERT OR IGNORE INTO seen VALUES (?,?)').run(id, Date.now()); }
   markOutgoing(id) { this.markSeen(`outgoing:${id}`); }
+  saveReceipt(waId,jid) { this.db.prepare('INSERT OR IGNORE INTO delivery_receipts VALUES (?,?)').run(waId,jid); }
+  receipts() { return this.db.prepare('SELECT * FROM delivery_receipts').all(); }
+  removeReceipt(waId,jid) { this.db.prepare('DELETE FROM delivery_receipts WHERE wa_id=? AND jid=?').run(waId,jid); }
+  deliveryTarget(waId) {
+    const item=this.db.prepare("SELECT jid,payload FROM outbox WHERE wa_id=? AND status!='received' LIMIT 1").get(waId);
+    const payload=item ? this.decrypt(item.payload) : null;
+    if(payload?.kind==='delivery')return {buyer:item.jid,orderId:payload.orderId};
+    return null;
+  }
   isOutgoing(id) { return this.hasSeen(`outgoing:${id}`); }
   retireLegacyRelay() {
     if (this.authGet('feature:direct-claim')) return;
@@ -92,7 +102,11 @@ export class LocalStore {
   }
   cancelBroadcast() { return this.db.prepare("UPDATE outbox SET status='cancelled' WHERE status='broadcast'").run().changes; }
   uncertainById(id) { return this.db.prepare("SELECT id,jid,created FROM outbox WHERE id=? AND status='uncertain'").get(id); }
-  retry(id) { return this.db.prepare("UPDATE outbox SET status=CASE WHEN id LIKE 'broadcast:%' THEN 'broadcast' ELSE 'pending' END,wa_id=NULL WHERE id=? AND status='uncertain'").run(id).changes; }
+  retry(id) {
+    const row = this.db.prepare('SELECT payload FROM outbox WHERE id=?').get(id);
+    if (row && this.decrypt(row.payload).kind === 'delivery') return 0;
+    return this.db.prepare("UPDATE outbox SET status=CASE WHEN id LIKE 'broadcast:%' THEN 'broadcast' ELSE 'pending' END,wa_id=NULL WHERE id=? AND status='uncertain'").run(id).changes;
+  }
   saveMessage(id, message) {
     this.db.prepare('INSERT OR REPLACE INTO retry_messages VALUES (?,?,?)').run(id, this.encrypt(message), Date.now());
   }

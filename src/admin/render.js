@@ -1,3 +1,4 @@
+import { availability } from '../inventory.js';
 export const money = n => `Rp${Number(n).toLocaleString('id-ID')}`;
 export const statusLabels = {
   awaiting_payment: 'Menunggu bayar', awaiting_proof: 'Menunggu bukti', review: 'Verifikasi pembayaran',
@@ -15,9 +16,9 @@ export function screen(path, body, { notice = '', options = [], input = false, r
   return renderMessage('MAZY STORE · ADMIN', [root ? '' : `*${path}*`, notice, body, options.length ? numbered(options) : '', input ? '/kembali: langkah sebelumnya\n/admin: beranda' : options.length ? 'Balas angka untuk memilih.' : 'Ketik /admin untuk beranda.']);
 }
 export function orderDetails(o) {
-  return `${o.id}\nBuyer: ${phone(o.buyer)}\nProduk: ${o.product}\nVarian: ${o.variant}\nJumlah: ${o.quantity}\nHarga satuan: ${money(o.unit_price)}\nTotal: ${money(o.total)}\nDibuat: ${date(o.created_at)}\nStatus: ${orderStatus(o)}\n${o.cancel_requested ? 'Ada permintaan pembatalan.\n' : ''}${o.status === 'review' ? `Bukti: ${o.proof_relay === 'sent' ? 'sudah diteruskan ke WA admin' : 'penerusan belum terkonfirmasi'}.\nCari gambar pada notifikasi nomor order ini.\n` : ''}`;
+  return `${o.id}\nBuyer: ${phone(o.buyer)}\nProduk: ${o.product}\nVarian: ${o.variant}\nJumlah: ${o.quantity}\nHarga satuan: ${money(o.unit_price)}\nTotal: ${money(o.total)}\nDibuat: ${date(o.created_at)}\nPenyerahan: ${o.delivery_mode === 'auto' ? 'Otomatis' : 'Manual'}\nStatus: ${orderStatus(o)}\n${o.cancel_requested ? 'Ada permintaan pembatalan.\n' : ''}${o.status === 'review' ? `Bukti: ${o.proof_relay === 'sent' ? 'sudah diteruskan ke WA admin' : 'penerusan belum terkonfirmasi'}.\nCari gambar pada notifikasi nomor order ini.\n` : ''}`;
 }
 export function variantDetails(v) {
-  return `${v.name}\nHarga: ${money(v.price)}\nStatus: ${v.ready ? 'Ready' : 'Kosong'}\n\n*Deskripsi*\n${v.terms}`;
+  return `${v.name}\nHarga: ${money(v.price)}\nPenyerahan: ${v.delivery_mode === 'auto' ? 'Otomatis' : 'Manual'}\n${availability(v)}${v.delivery_mode === 'auto' ? `\nDipesan: ${v.stock_reserved || 0}\nTerjual: ${v.stock_sold || 0}` : ''}\n\n*Deskripsi*\n${v.terms}`;
 }
 import { renderMessage, numbered } from '../ui.js';

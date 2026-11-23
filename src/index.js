@@ -8,7 +8,8 @@ import { sqliteAuth } from './auth.js';
 import { Transport } from './transport.js';
 import { StoreBot } from './bot.js';
 import { createApp } from './server.js';
-import { collectImage } from './media.js';
+import { collectImage, readStockFile } from './media.js';
+import { AutoDelivery } from './delivery.js';
 import { resolveIncoming } from './incoming.js';
 import { renderMessage } from './ui.js';
 
@@ -23,6 +24,7 @@ const auth = sqliteAuth(local);
 const transport = new Transport(local, api, config);
 const status = { whatsapp: false, database: false, stopping: false };
 const bot = new StoreBot(api, transport, config, local, () => ({ ...status }), details => logger.error(details, 'Permintaan admin gagal'));
+const delivery = new AutoDelivery(api,transport,local,config);
 let socket;
 let reconnect;
 let attempts = 0;
@@ -57,15 +59,19 @@ async function processMessage(m, sock) {
       return collectImage(stream, config.maxImageBytes);
     };
   }
+  let document;
+  if(content.documentMessage && buyer===config.adminJid && !selfChat) {
+    document=()=>readStockFile(content.documentMessage,()=>downloadContentFromMessage(content.documentMessage,'document',{options:{signal:AbortSignal.timeout(30000)}}));
+  }
   const text = content.conversation || content.extendedTextMessage?.text || content.imageMessage?.caption || '';
-  if (text.length > 6000) {
+  if (text.length > (buyer===config.adminJid && !selfChat ? 262144 : 6000)) {
     local.markSeen(seenId);
     await transport.text(jid, 'Pesan terlalu panjang. Maksimal 6000 karakter.', `${seenId}:length`);
     return;
   }
   const quotedId = content.extendedTextMessage?.contextInfo?.stanzaId || content.imageMessage?.contextInfo?.stanzaId;
   try {
-    await bot.handle({ jid, buyer, selfChat, id: m.key.id, text, image, quotedId });
+    await bot.handle({ jid, buyer, selfChat, id: m.key.id, text, image, document, quotedId });
     status.database = true;
   } catch (error) {
     const known = error.status && error.status < 500;
@@ -90,6 +96,8 @@ function connect() {
   socket = sock;
   let pairingRequested = false;
   sock.ev.on('creds.update', auth.saveCreds);
+  sock.ev.on('messages.update',updates=>{for(const {key,update} of updates)void delivery.receipt(key,update.status,sock).catch(()=>logger.warn('Receipt barang belum tersimpan.'));});
+  sock.ev.on('message-receipt.update',updates=>{for(const {key,receipt} of updates)if(receipt.receiptTimestamp || receipt.readTimestamp)void delivery.receipt(key,3,sock).catch(()=>logger.warn('Receipt barang belum tersimpan.'));});
   sock.ev.on('connection.update', async update => {
     try {
       if (update.qr && !auth.state.creds.registered) {
@@ -141,7 +149,10 @@ function connect() {
 async function probe() {
   try { await api.catalog(); status.database = true; } catch { status.database = false; }
 }
-const drainTimer = setInterval(() => { void transport.drain().catch(() => logger.warn('Antrean pengiriman bermasalah.')); }, 2000);
+const drainTimer = setInterval(() => {
+  void delivery.tick().catch(()=>logger.warn('Penyerahan otomatis belum dapat diperiksa.'));
+  void transport.drain().catch(()=>logger.warn('Antrean pengiriman bermasalah.'));
+}, 2000);
 const probeTimer = setInterval(() => { void probe(); }, 30000);
 const cleanTimer = setInterval(() => local.cleanup(), 60000);
 async function shutdown(code = 0) {
@@ -155,7 +166,7 @@ async function shutdown(code = 0) {
   force.unref();
   await queue;
   socket?.end(undefined);
-  while (transport.draining || transport.mapping) await new Promise(resolve => setTimeout(resolve, 50));
+  while (transport.draining || transport.mapping || delivery.running) await new Promise(resolve => setTimeout(resolve, 50));
   auth.saveCreds();
   local.close();
   process.exit(code);

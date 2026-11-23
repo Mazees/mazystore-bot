@@ -230,6 +230,30 @@ Lakukan backup di luar hosting setiap hari saat toko aktif. Backup lama mungkin 
 
 ## Pengujian
 
+### Gudang stok dan Auto Delivery
+
+Semua varian dan order lama tetap **Manual**. Buka `/admin → Kelola katalog → kategori → varian → Ubah ke Otomatis` untuk mengaktifkan gudang varian tersebut. Mode Manual memakai Ready/Kosong dan CLAIM ke admin; mode Otomatis memakai jumlah stok tersedia. Mengubah mode hanya berlaku untuk order baru.
+
+Pada varian Otomatis, gunakan **Tambah stok satuan**, **Tambah stok batch**, atau **Lihat stok tersedia**. Batch dapat dikirim sebagai pesan atau file `.txt` UTF-8 maksimal 256 KiB. Pisahkan unit dengan baris `---`; maksimal 100 unit per batch dan 2.000 karakter per unit. Contoh:
+
+```text
+Email: akun1@example.com
+Password: password1
+---
+Kode aktivasi: ABCD-1234
+Petunjuk: redeem di halaman aktivasi.
+```
+
+Satu blok adalah satu paket barang. Batch diperiksa dan disimpan seluruhnya atau ditolak seluruhnya. Event WA yang sama tidak menggandakan impor; pesan/file baru dianggap batch baru. Stok **Tersedia** dapat diedit atau dihapus permanen; stok yang sudah **Dipesan/Terjual** tidak dapat diubah. Edit yang bersamaan dengan checkout ditolak. Tidak ada konfirmasi tambahan; `/kembali` membatalkan form.
+
+Checkout mengunci stok secara atomik sesuai kuantitas sebelum QRIS dikirim. Pembatalan sebelum pembayaran disetujui melepaskan stok; penolakan bukti mempertahankan stok selama order aktif. Tidak ada kedaluwarsa order otomatis. Katalog/varian dengan order otomatis aktif belum bisa dihapus.
+
+Sesudah admin `/setujui` pembayaran, bot mengirim satu pesan barang per unit stok kepada buyer. ID pesan dan isi terenkripsi disimpan sebelum pengiriman. Order tetap **Diproses** sampai seluruh unit memperoleh delivery/read receipt dari perangkat buyer; ID hasil `sendMessage()` saja tidak menyelesaikan order. Selanjutnya status menjadi **Selesai**, stok Terjual, dan autotesti berjalan sekali jika aktif. Order Otomatis tidak mengirim CLAIM. Isi stok tidak masuk autotesti atau log.
+
+Restart tidak mengalokasikan ulang atau mengulang kiriman yang mungkin sudah sampai. Hasil kiriman meragukan diberitahukan ke admin dan tidak dapat diulang dari menu antrean umum. Periksa chat buyer; admin dapat `/selesai` sesudah memastikan penyerahan. Refund tetap membutuhkan persetujuan buyer dan menghentikan bagian yang belum mulai dikirim. Setelah refund selesai, stok kembali tersedia hanya jika seluruh pengiriman belum pernah dimulai; barang yang mungkin terkirim tidak dijual ulang otomatis.
+
+Migrasi `0007_inventory.sql` menambah stok, alokasi, mode snapshot order, dan catatan pengiriman. Isi stok dienkripsi oleh bot menggunakan **DATA_KEY yang sama** sebelum disimpan di D1. Cadangkan DATA_KEY secara terpisah bersama backup D1; kehilangan/mengganti kunci membuat stok lama tidak dapat dibaca. Tidak ada `.env`, dependency, atau layanan tambahan. Deploy: `npm run db:remote`, `npm run worker:deploy`, lalu perbarui/restart bot panel. Uji dengan stok dummy terlebih dahulu untuk memastikan receipt WA pada nomor bot benar-benar diterima.
+
 ```sh
 npm run check
 npm test

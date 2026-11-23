@@ -1,3 +1,4 @@
+import { parseStock, encryptStock, decryptStock, availability } from '../inventory.js';
 import { randomUUID } from 'node:crypto';
 import { screen, orderDetails, variantDetails, money, phone, date, statusLabels, orderStatus } from './render.js';
 import { orderActions, actionLabels, requiresReason, executeOrderAction, notifyOrderAction } from './actions.js';
@@ -6,11 +7,11 @@ import { renderMessage } from '../ui.js';
 import { Testimonials } from '../testimonials.js';
 
 const TTL = 30 * 60000;
-const UI_VERSION = 9;
+const UI_VERSION = 10;
 const shortcuts = { '/setujui': 'approve', '/selesaikan': 'complete', '/selesai': 'complete', '/tolakbukti': 'reject_proof', '/batal': 'cancel', '/batalkan': 'cancel', '/refund': 'refund', '/refundselesai': 'refund_complete', '/lanjutkan': 'clear_cancel' };
 const legacy = new Set(['/produk','/tambahvarian','/ubahvarian','/harga','/ready','/order','/setujui','/tolakbukti','/selesai','/batalkan','/refund','/refundselesai','/lanjutkan','/balas','/gagalkirim','/ulang','/batalsetup']);
 const groupLabels = { all: 'Semua pesanan', review: 'Menunggu verifikasi', processing: 'Sedang diproses', cancellation: 'Permintaan pembatalan', refund: 'Refund', ...statusLabels };
-const locationKeys = ['screen','filter','categoryId','variantId','orderId','draft','step','pending','version','back'];
+const locationKeys = ['screen','filter','categoryId','variantId','stockId','batch','orderId','draft','step','pending','version','back'];
 const location = state => Object.fromEntries(locationKeys.filter(key => state[key] !== undefined).map(key => [key, key === 'back' ? location(state.back) : state[key]]));
 const child = (state, next) => ({ ...next, back: location(state) });
 
@@ -18,7 +19,7 @@ export class AdminNavigation {
   constructor(api, transport, local, runtime = () => ({}), config = {}, reportError = () => {}) {
     this.api = api; this.transport = transport; this.local = local; this.runtime = runtime;
     this.adminNumber = config.adminNumber || config.adminJid?.split('@')[0];
-    this.reportError = reportError;
+    this.reportError = reportError; this.dataKey = config.dataKey;
     this.testimonials = new Testimonials(local, transport);
   }
 
@@ -97,6 +98,8 @@ export class AdminNavigation {
         if (!text || text.length > 2000) return await this.show(ctx, ctx.state, 'Pesan broadcast wajib 1–2000 karakter.');
         return await this.apply(ctx, child(ctx.state, { pending: { kind: 'broadcast', key: ctx.state.draft.key, text } }));
       }
+      if (['stockAdd','stockEdit'].includes(ctx.state.screen)) return await this.stockInput(ctx,text,event);
+      if (message.document) return await this.show(ctx,ctx.state,'File .txt hanya diterima pada Tambah stok batch.');
       if (ctx.state.screen === 'input') return await this.input(ctx, text, event);
       if (ctx.state.screen === 'add') return await this.addInput(ctx, text);
       if (ctx.state.screen === 'addCategory') return await this.categoryInput(ctx, text);
@@ -212,7 +215,26 @@ export class AdminNavigation {
       s.version = order.version;
       path += ' › Pesanan › Detail';
       body = `${orderDetails(order)}${order.status === 'review' ? '\nPeriksa uang masuk sebelum menyetujui.\n' : ''}\n${choices(orderActions(order).map(a => ({ ...a, type: 'orderAction' })))}`;
+      if (order.delivery_mode === 'auto') choices([{type:'orderStock',label:'Lihat barang yang dialokasikan'}]);
       if (order.status === 'completed') body += '\n/post - Posting ke saluran';
+    } else if (s.screen === 'stockList') {
+      path += ' › Gudang › Stok tersedia';
+      const {items}=await this.api.stock(s.variantId);
+      body=items.length ? '' : 'Belum ada stok tersedia.';
+      choices(items.map((item,index)=>({type:'stockItem',id:item.id,label:'Stok '+(index+1)})));
+    } else if (s.screen === 'stockItem') {
+      const item=await this.api.stockItem(s.stockId);
+      s.version=item.version;s.variantId=item.variant_id;
+      path += ' › Gudang › Detail stok';
+      body='Status: '+({available:'Tersedia',reserved:'Dipesan',sold:'Terjual'}[item.state])+'\n\n'+decryptStock(item.payload,this.dataKey);
+      if(item.state==='available')choices([{type:'editStock',label:'Edit isi stok'},{type:'deleteStock',label:'Hapus stok permanen'}]);
+    } else if (s.screen === 'orderStock') {
+      path += ' › Pesanan › Barang';
+      const {items}=await this.api.orderStock(s.orderId);
+      body=items.map((item,i)=>'Barang '+(i+1)+'\n'+decryptStock(item.payload,this.dataKey)).join('\n\n────────────────────\n\n') || 'Tidak ada stok yang terikat pada order ini.';
+    } else if (s.screen === 'stockAdd' || s.screen === 'stockEdit') {
+      path += ' › Gudang › '+(s.screen==='stockEdit'?'Edit stok':s.batch?'Tambah batch':'Tambah satuan');
+      body=s.screen==='stockEdit' ? 'Isi saat ini:\n'+decryptStock((await this.api.stockItem(s.stockId)).payload,this.dataKey)+'\n\nKirim seluruh isi pengganti (1–2000 karakter).' : s.batch ? 'Kirim batch sebagai teks atau file .txt UTF-8 maksimal 256 KiB.\nPisahkan unit dengan baris ---\nMaksimal 100 unit; masing-masing 1–2000 karakter. Seluruh batch diperiksa sebelum disimpan.' : 'Kirim isi satu paket barang (1–2000 karakter).';
     } else if (s.screen === 'categories' || s.screen === 'variants' || s.screen === 'variant') {
       const { categories, variants } = await this.api.catalog();
       const category = categories.find(c => c.id === s.categoryId);
@@ -226,7 +248,7 @@ export class AdminNavigation {
         s.categoryVersion = category.version;
         path = `${category.name} (${variants.filter(v => v.category_id === s.categoryId && !v.archived).length})`;
         const rows = variants.filter(v => v.category_id === s.categoryId && !v.archived);
-        list(rows, v => `${v.name} · ${money(v.price)}\nStatus: ${v.ready ? 'Ready' : 'Kosong'}`, 'variant');
+        list(rows, v => `${v.name} · ${money(v.price)}\nStatus: ${availability(v)}`, 'variant');
         body = rows.length ? '' : 'Belum ada varian.';
         choices([{ type: 'addVariant', label: 'Tambah varian' }, { type: 'renameCategory', label: 'Ubah nama katalog' }, { type: 'deleteCategory', label: 'Hapus katalog' }]);
       } else {
@@ -237,7 +259,12 @@ export class AdminNavigation {
         path += ` › ${categories.find(c => c.id === variant.category_id).name} › Detail`;
         body = `${variantDetails(variant)}\n\n${choices([
           { type: 'edit', id: 'price', label: 'Ubah harga' }, { type: 'edit', id: 'name', label: 'Ubah nama' }, { type: 'edit', id: 'terms', label: 'Ubah deskripsi' },
-          { type: 'variantAction', id: 'ready', ready: !variant.ready, label: variant.ready ? 'Tandai Kosong' : 'Tandai Ready' },
+          ...(variant.delivery_mode === 'auto' ? [
+            {type:'addStock',label:'Tambah stok satuan'},
+            {type:'addStock',batch:true,label:'Tambah stok batch'},
+            {type:'stockList',label:'Lihat stok tersedia'},
+          ] : [{ type: 'variantAction', id: 'ready', ready: !variant.ready, label: variant.ready ? 'Tandai Kosong' : 'Tandai Ready' }]),
+          {type:'variantAction',id:'delivery',deliveryMode:variant.delivery_mode==='auto'?'manual':'auto',label:variant.delivery_mode==='auto'?'Ubah ke Manual':'Ubah ke Otomatis'},
           { type: 'variantAction', id: 'delete', label: 'Hapus varian permanen' },
         ])}`;
       }
@@ -266,7 +293,7 @@ export class AdminNavigation {
       body = jobs.length ? 'Memilih pesan langsung mengirim ulang. Pesan sebelumnya mungkin sudah sampai; periksa chat tujuan dulu.' : 'Tidak ada pengiriman meragukan.';
     }
     if (body === undefined) return this.show(ctx, { screen: 'home' });
-    const input = s.screen === 'input' || s.screen === 'add' || s.screen === 'addCategory' || s.screen === 'renameCategory' || s.screen === 'broadcastInput' || s.screen === 'testimonialLink';
+    const input = ['stockAdd','stockEdit'].includes(s.screen) || s.screen === 'input' || s.screen === 'add' || s.screen === 'addCategory' || s.screen === 'renameCategory' || s.screen === 'broadcastInput' || s.screen === 'testimonialLink';
     if (!input) {
       if (s.screen !== 'home') menu.push({ type: 'back', label: 'Kembali' }, { type: 'home', label: 'Beranda' });
     }
@@ -282,6 +309,17 @@ export class AdminNavigation {
     if (option.type === 'go') {
       const { type, label, ...next } = option;
       return this.show(ctx, child(s, next));
+    }
+    if(option.type==='stockList')return this.show(ctx,child(s,{screen:'stockList',variantId:s.variantId}));
+    if(option.type==='stockItem')return this.show(ctx,child(s,{screen:'stockItem',stockId:option.id,variantId:s.variantId}));
+    if(option.type==='orderStock')return this.show(ctx,child(s,{screen:'orderStock',orderId:s.orderId}));
+    if(option.type==='addStock')return this.show(ctx,child(s,{screen:'stockAdd',variantId:s.variantId,batch:Boolean(option.batch)}));
+    if(option.type==='editStock' || option.type==='deleteStock') {
+      const item=await this.api.stockItem(s.stockId);
+      if(item.state!=='available' || item.version!==s.version)return this.show(ctx,location(s),'Stok berubah atau sudah dialokasikan.');
+      if(option.type==='editStock')return this.show(ctx,child(s,{screen:'stockEdit',stockId:item.id,variantId:item.variant_id,version:item.version}));
+      await this.api.changeStock(item.id,{mode:'delete',expectedVersion:item.version});
+      return this.show(ctx,{screen:'stockList',variantId:item.variant_id,back:{screen:'variant',variantId:item.variant_id}},'✓ Stok dihapus permanen.');
     }
     if (option.type === 'refresh') return this.show(ctx, location(s));
     if (option.type === 'toggleTestimonial') {
@@ -315,7 +353,7 @@ export class AdminNavigation {
     if (option.type === 'edit' || option.type === 'variantAction') {
       const v = (await this.api.catalog()).variants.find(row => row.id === s.variantId);
       if (!v || v.version !== s.version) return this.show(ctx, location(s), 'Varian berubah. Pilih lagi dari detail terbaru.');
-      const pending = { kind: 'variant', field: option.id, ready: option.ready, version: v.version, label: option.label };
+      const pending = { kind: 'variant', field: option.id, ready: option.ready, deliveryMode: option.deliveryMode, version: v.version, label: option.label };
       const next = child(s, { screen: 'input', categoryId: s.categoryId, variantId: v.id, pending });
       return option.type === 'edit' ? this.show(ctx, next) : this.apply(ctx, next);
     }
@@ -324,6 +362,28 @@ export class AdminNavigation {
       const job = this.local.uncertainById(option.id);
       if (!job) return this.show(ctx, location(s), 'Pesan tidak lagi berada dalam daftar ini.');
       return this.apply(ctx, child(s, { pending: { kind: 'retry', ...job } }));
+    }
+  }
+
+  async stockInput(ctx,text,event) {
+    const s=ctx.state;
+    try {
+      if(ctx.message.document) {
+        if(s.screen!=='stockAdd' || !s.batch)return this.show(ctx,s,'File hanya diterima pada Tambah stok batch.');
+        text=await ctx.message.document();
+      }
+      const values=parseStock(text,s.screen==='stockAdd' && s.batch);
+      if(s.screen==='stockEdit') {
+        await this.api.changeStock(s.stockId,{mode:'edit',expectedVersion:s.version,payload:encryptStock(values[0],this.dataKey)});
+        return this.show(ctx,{screen:'stockItem',stockId:s.stockId,variantId:s.variantId,back:{screen:'stockList',variantId:s.variantId}},'✓ Stok diperbarui.');
+      }
+      const result=await this.api.addStock({key:event,variantId:s.variantId,items:values.map(value=>encryptStock(value,this.dataKey))});
+      const variant=(await this.api.catalog()).variants.find(v=>v.id===s.variantId);
+      return this.show(ctx,{screen:'variant',variantId:s.variantId,categoryId:variant.category_id,back:{screen:'variants',categoryId:variant.category_id}},'✓ '+result.added+' stok ditambahkan. Stok tersedia: '+variant.stock_available+'.');
+    } catch(error) {
+      if(error.status && error.status!==400 && error.status!==409)throw error;
+      if(error.status===409)return this.show(ctx,{screen:'stockList',variantId:s.variantId,back:{screen:'variant',variantId:s.variantId}},error.message);
+      return this.show(ctx,s,error.status===400 || !error.code ? error.message : 'Stok belum berhasil disimpan.');
     }
   }
 
@@ -403,7 +463,7 @@ export class AdminNavigation {
       return this.show(ctx, { screen: 'variant', variantId: v.id, categoryId: v.category_id, back: { screen: 'variants', categoryId: v.category_id } }, '✓ Varian dibuat dengan status Kosong. Periksa sebelum menandainya Ready.');
     }
     if (pending.kind === 'variant') {
-      const v = await this.api.variant({ id: s.variantId, mode: pending.field, expectedVersion: pending.version, ...(pending.field === 'price' ? { price: pending.value } : ['name','terms'].includes(pending.field) ? { value: pending.value } : pending.field === 'ready' ? { ready: pending.ready } : {}) });
+      const v = await this.api.variant({ id: s.variantId, mode: pending.field, expectedVersion: pending.version, ...(pending.field === 'price' ? { price: pending.value } : ['name','terms'].includes(pending.field) ? { value: pending.value } : pending.field === 'ready' ? { ready: pending.ready } : pending.field === 'delivery' ? {deliveryMode:pending.deliveryMode} : {}) });
       if (v.deleted) return this.show(ctx, { screen: 'variants', categoryId: v.category_id, back: { screen: 'categories' } }, '✓ Varian dihapus permanen. Pesanan lama tetap tersimpan.');
       return this.show(ctx, { screen: 'variant', variantId: v.id, categoryId: v.category_id, back: { screen: 'variants', categoryId: v.category_id } }, '✓ Perubahan tersimpan.');
     }

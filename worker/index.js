@@ -1,3 +1,4 @@
+import { inventoryRoute } from './inventory.js';
 import { claimDestination } from '../src/contact.js';
 import { verifyClaimLink } from '../src/claim-link.js';
 
@@ -20,9 +21,9 @@ async function customer(db, buyer) {
   return { ...row, session: JSON.parse(row.session), order };
 }
 
-async function bodyOf(request) {
+async function bodyOf(request, limit = 16000) {
   const raw = await request.text();
-  if (raw.length > 16000) fail(413, 'Permintaan terlalu besar.');
+  if (raw.length > limit) fail(413, 'Permintaan terlalu besar.');
   let body;
   try { body = JSON.parse(raw); } catch { fail(400, 'JSON tidak valid.'); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) fail(400, 'Body harus berupa object JSON.');
@@ -41,6 +42,7 @@ async function route(request, env) {
   const method = request.method;
   if (path[0] !== 'v1') fail(404, 'Endpoint tidak ditemukan.');
   const [, resource, id, sub] = path;
+  if (['stock','deliveries'].includes(resource)) return inventoryRoute(request,db,path,bodyOf,hash);
   if (resource === 'admin' && method === 'GET') {
     if (id === 'recipients') {
       const after = url.searchParams.get('after') || '';
@@ -70,7 +72,7 @@ async function route(request, env) {
   if (resource === 'catalog' && method === 'GET') {
     const [categories, variants] = await Promise.all([
       db.prepare('SELECT * FROM categories WHERE deleted=0 ORDER BY id').all(),
-      db.prepare('SELECT v.* FROM variants v JOIN categories c ON c.id=v.category_id WHERE c.deleted=0 AND v.archived=0 ORDER BY v.category_id,v.id').all(),
+      db.prepare(`SELECT v.*,(SELECT COUNT(*) FROM inventory WHERE variant_id=v.id AND state='available') AS stock_available,(SELECT COUNT(*) FROM inventory WHERE variant_id=v.id AND state='reserved') AS stock_reserved,(SELECT COUNT(*) FROM inventory WHERE variant_id=v.id AND state='sold') AS stock_sold FROM variants v JOIN categories c ON c.id=v.category_id WHERE c.deleted=0 AND v.archived=0 ORDER BY v.category_id,v.id`).all(),
     ]);
     return { categories: categories.results, variants: variants.results };
   }
@@ -109,6 +111,7 @@ async function route(request, env) {
       if (data.mode === 'rename' && current.name === name) return current;
       fail(409, 'Katalog berubah. Periksa detail terbaru.');
     }
+    if (data.mode === 'delete' && await sql(db,"SELECT o.id FROM orders o JOIN variants v ON v.id=o.variant_id WHERE v.category_id=? AND o.delivery_mode='auto' AND o.status NOT IN ('completed','cancelled','refunded')",categoryId).first()) fail(409,'Katalog memiliki order otomatis aktif.');
     let result;
     try {
       result = data.mode === 'delete'
@@ -125,8 +128,8 @@ async function route(request, env) {
     const row = await customer(db, id);
     if (method === 'GET' && !sub) return row;
     if (method === 'PUT' && sub === 'session') {
-      const state = await bodyOf(request);
-      if (!state || typeof state !== 'object' || Array.isArray(state) || JSON.stringify(state).length > 8000) fail(400, 'Sesi tidak valid.');
+      const state = await bodyOf(request,524288);
+      if (!state || typeof state !== 'object' || Array.isArray(state) || JSON.stringify(state).length > 524288) fail(400, 'Sesi tidak valid.');
       await sql(db, 'UPDATE customers SET session=? WHERE buyer=?', JSON.stringify(state), id).run();
       return { ok: true };
     }
@@ -142,10 +145,14 @@ async function route(request, env) {
       const result = await sql(db, `UPDATE variants SET ${fields},version=version+1 WHERE id=? AND version=?`, ...values, v.id, current.version).run();
       if (!result.meta.changes) fail(409, 'Varian berubah. Buka detail terbaru.');
     };
-    if (v.mode === 'price') {
+    if (v.mode === 'delivery') {
+      if (!['manual','auto'].includes(v.deliveryMode)) fail(400,'Mode penyerahan tidak valid.');
+      await update('delivery_mode=?',v.deliveryMode);
+    } else if (v.mode === 'price') {
       if (!Number.isSafeInteger(v.price) || v.price < 1 || v.price > 9999999999) fail(400, 'Harga tidak valid.');
       await update('price=?', v.price);
     } else if (v.mode === 'ready') {
+      if (current.delivery_mode === 'auto') fail(409,'Mode otomatis memakai jumlah stok, bukan Ready/Kosong.');
       if (typeof v.ready !== 'boolean') fail(400, 'Status ready tidak valid.');
       if (v.ready && current.archived) fail(409, 'Varian lama tidak tersedia. Tambahkan varian baru.');
       await update('ready=?', Number(v.ready));
@@ -153,6 +160,7 @@ async function route(request, env) {
       if (!text(v.value, v.mode === 'name' ? 120 : 2000)) fail(400, 'Nilai tidak valid.');
       await update(`${v.mode}=?`, v.value);
     } else if (v.mode === 'delete') {
+      if (await sql(db,"SELECT id FROM orders WHERE variant_id=? AND delivery_mode='auto' AND status NOT IN ('completed','cancelled','refunded')",v.id).first()) fail(409,'Masih ada order otomatis aktif.');
       const result = await sql(db, 'DELETE FROM variants WHERE id=? AND version=?', v.id, current.version).run();
       if (!result.meta.changes) fail(409, 'Varian berubah. Buka detail terbaru.');
       return { id: current.id, category_id: current.category_id, deleted: true };
@@ -178,13 +186,14 @@ async function route(request, env) {
       }
       const orderId = `MZ-${(await hash(data.key)).slice(0, 16).toUpperCase()}`;
       try {
-        await sql(db, `INSERT INTO orders(id,request_key,buyer,variant_id,product,variant,terms,unit_price,quantity,total,status,qris_version)
-          SELECT ?,?,?,v.id,c.name,v.name,v.terms,v.price,?,v.price * ?,'awaiting_payment',?
-          FROM variants v JOIN categories c ON c.id=v.category_id WHERE v.id=? AND c.deleted=0 AND v.ready=1 AND v.archived=0 AND v.price=? AND v.terms=?`,
-        orderId, data.key, data.buyer, data.quantity, data.quantity, data.qrisVersion, data.variantId, data.expectedPrice, data.expectedTerms).run();
+        await sql(db, `INSERT INTO orders(id,request_key,buyer,variant_id,product,variant,terms,unit_price,quantity,total,status,qris_version,delivery_mode)
+          SELECT ?,?,?,v.id,c.name,v.name,v.terms,v.price,?,v.price * ?,'awaiting_payment',?,v.delivery_mode
+          FROM variants v JOIN categories c ON c.id=v.category_id WHERE v.id=? AND c.deleted=0 AND (v.delivery_mode='auto' OR v.ready=1) AND v.archived=0 AND v.price=? AND v.terms=? AND (? IS NULL OR v.delivery_mode=?)`,
+        orderId, data.key, data.buyer, data.quantity, data.quantity, data.qrisVersion, data.variantId, data.expectedPrice, data.expectedTerms, data.expectedDeliveryMode || null, data.expectedDeliveryMode || null).run();
       } catch (error) {
         const retry = await sql(db, 'SELECT * FROM orders WHERE request_key=?', data.key).first();
         if (retry) return retry;
+        if (String(error).includes('STOCK_UNAVAILABLE')) fail(409,'Stok tidak mencukupi. Pilih jumlah lebih kecil.');
         if (String(error).includes('UNIQUE')) fail(409, 'Masih ada order aktif. Gunakan /pesanan atau /batal.');
         throw error;
       }
@@ -271,11 +280,14 @@ export default {
         if (!match || !await verifyClaimLink(match[1], match[2], match[3], env.API_SECRET)) fail(404, 'Link tidak ditemukan.');
         const order = await sql(env.DB, 'SELECT * FROM orders WHERE id=?', match[1]).first();
         if (!order) fail(404, 'Link tidak ditemukan.');
-        if (order.status !== 'processing') fail(410, 'Link CLAIM sudah tidak aktif. Hubungi admin melalui /chat di bot.');
+        if (order.status !== 'processing' || order.delivery_mode === 'auto') fail(410, 'Link CLAIM sudah tidak aktif. Hubungi admin melalui /chat di bot.');
         return new Response(null, { status: 302, headers: { Location: claimDestination(match[2], order), 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow' } });
       }
       return json(await route(request, env));
     }
-    catch (error) { return json({ error: error.status ? error.message : 'Layanan database bermasalah. Coba lagi.' }, error.status || 503); }
+    catch (error) {
+      if(/STOCK_ALLOCATED|AUTO_ORDER_ACTIVE|STOCK_VARIANT_UNAVAILABLE|STOCK_UNAVAILABLE/.test(String(error)))return json({error:'Stok atau order berubah. Periksa data terbaru; perubahan tidak dijalankan.'},409);
+      return json({ error: error.status ? error.message : 'Layanan database bermasalah. Coba lagi.' }, error.status || 503);
+    }
   },
 };

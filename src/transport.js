@@ -7,10 +7,10 @@ export class Transport {
   constructor(store, api, config) { this.store = store; this.api = api; this.config = config; this.socket = null; this.draining = false; this.mapping = false; this.nextBroadcastAt = 0; }
   attach(socket) { this.socket = socket; }
   detach(socket) { if (this.socket === socket) this.socket = null; }
-  async send(jid, content) {
+  async send(jid, content, fixedMessageId = null) {
     const socket = this.socket;
     if (!socket) throw new Error('WhatsApp belum tersambung.');
-    const messageId = generateMessageIDV2(socket.user?.id);
+    const messageId = fixedMessageId || generateMessageIDV2(socket.user?.id);
     this.store.markOutgoing(messageId);
     if (jid.endsWith('@newsletter') && Buffer.isBuffer(content.image)) return sendNewsletterImage(socket, jid, content, messageId);
     return socket.sendMessage(jid, content, { messageId });
@@ -46,12 +46,24 @@ export class Transport {
         } catch { this.store.setStatus(job.id, 'uncertain'); continue; }
         this.store.setStatus(job.id, 'sending');
         try {
-          const sent = await this.send(job.jid, content);
+          if (job.payload.kind === 'delivery') {
+            try { await this.api.delivery(job.payload.orderId,{mode:'start',part:job.payload.part}); }
+            catch(error) {
+              this.store.setStatus(job.id,error.status===409?'retired':'uncertain');
+              continue;
+            }
+          }
+          const sent = await this.send(job.jid, content, job.payload.waId);
           if (!sent?.key?.id) throw new Error('No WA message id');
+          if(job.payload.kind==='delivery' && sent.key.id!==job.payload.waId)throw new Error('Unexpected delivery message id');
           this.store.saveMessage(sent.key.id, sent.message);
           this.store.setStatus(job.id, job.payload.context ? 'mapping' : 'sent', sent.key.id);
+          if(job.payload.kind==='delivery')await this.api.delivery(job.payload.orderId,{mode:'sent',waId:job.payload.waId});
         } catch {
           this.store.setStatus(job.id, 'uncertain');
+          if(job.payload.kind==='delivery') {
+            try {await this.api.delivery(job.payload.orderId,{mode:'uncertain',waId:job.payload.waId});}catch { /* D1 retains sending until the next inspection. */ }
+          }
           break;
         }
       }

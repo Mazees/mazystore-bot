@@ -1,3 +1,4 @@
+import { available, availability } from './inventory.js';
 import { createHash } from 'node:crypto';
 import { renderMessage, numbered } from './ui.js';
 import { claimMessage, helpMessage } from './contact.js';
@@ -24,15 +25,15 @@ export class BuyerNavigation {
     const command = text.split(/\s+/)[0].toLowerCase();
     const context = { buyer: c.buyer, orderId: c.order?.id || null, role: 'buyer', kind: 'relay', purpose: 'transaction' };
     const notice = value => say(value, this.config.adminJid, context);
-    const save = async state => { c.session = { ...state, buyerUiVersion: 4 }; await api.session(c.buyer, c.session); };
+    const save = async state => { c.session = { ...state, buyerUiVersion: 5 }; await api.session(c.buyer, c.session); };
     const action = (name, extra = {}) => api.action(c.order.id, { action: name, key: `${event}:${name}`, actor: c.buyer, ...extra });
     const info = (value, title = 'MAZY STORE · INFO') => say(renderMessage(title, [value]));
     const help = () => say(helpMessage(this.adminNumber));
     const active = async () => {
       if (!c.order) return info('Tidak ada pesanan aktif. Ketik /menu untuk belanja atau /chat untuk menghubungi admin.');
-      await say(renderMessage('MAZY STORE · PESANAN', [orderText(c.order), c.order.status === 'awaiting_payment' ? 'Setelah membayar, ketik /done.' : c.order.status === 'awaiting_proof' ? 'Kirim foto bukti pembayaran.' : c.order.status === 'review' ? 'Bukti sedang diperiksa admin.' : c.order.status === 'refund_pending' ? c.order.refund_accepted ? 'Refund sudah kamu setujui. Tunggu admin mengembalikan uang.\n/chat - Hubungi admin' : 'Admin menawarkan refund. Uang belum dikembalikan.\n/setujui - Setujui refund agar admin mengembalikan uang\n/chat - Hubungi admin jika belum sepakat' : 'Penyerahan barang dilakukan melalui chat pribadi admin.', ['awaiting_payment','awaiting_proof','review'].includes(c.order.status) ? '/batal - Batalkan pesanan langsung' : '']));
+      await say(renderMessage('MAZY STORE · PESANAN', [orderText(c.order), c.order.status === 'awaiting_payment' ? 'Setelah membayar, ketik /done.' : c.order.status === 'awaiting_proof' ? 'Kirim foto bukti pembayaran.' : c.order.status === 'review' ? 'Bukti sedang diperiksa admin.' : c.order.status === 'refund_pending' ? c.order.refund_accepted ? 'Refund sudah kamu setujui. Tunggu admin mengembalikan uang.\n/chat - Hubungi admin' : 'Admin menawarkan refund. Uang belum dikembalikan.\n/setujui - Setujui refund agar admin mengembalikan uang\n/chat - Hubungi admin jika belum sepakat' : c.order.delivery_mode === 'auto' ? 'Barang dikirim otomatis oleh bot. Menunggu penyerahan dan konfirmasi penerimaan WhatsApp. /chat untuk bantuan.' : 'Penyerahan barang dilakukan melalui chat pribadi admin.', ['awaiting_payment','awaiting_proof','review'].includes(c.order.status) ? '/batal - Batalkan pesanan langsung' : '']));
       if (c.order.status === 'awaiting_payment') await this.transport.payment(c.buyer, c.order, `${event}:payment`);
-      if (c.order.status === 'processing') await say(await claimMessage(api, this.adminNumber, c.order));
+      if (c.order.status === 'processing' && c.order.delivery_mode !== 'auto') await say(await claimMessage(api, this.adminNumber, c.order));
     };
     const options = async (title, sections, state, entries) => {
       await save({ ...state, options: entries });
@@ -42,8 +43,8 @@ export class BuyerNavigation {
       const { categories, variants } = await api.catalog();
       const entries = categories.map(cat => {
         const rows = variants.filter(v => v.category_id === cat.id && !v.archived);
-        const ready = rows.filter(v => v.ready);
-        const prices = ready.length > 2 ? `Mulai ${money(Math.min(...ready.map(v => v.price)))}` : ready.map(v => `${v.name} · ${money(v.price)}`).join('\n');
+        const ready = rows.filter(v => available(v)>0);
+        const prices = ready.length > 2 ? `Mulai ${money(Math.min(...ready.map(v => v.price)))}` : ready.map(v => `${v.name} · ${money(v.price)}${v.delivery_mode === 'auto' ? ` · ${availability(v)}` : ''}`).join('\n');
         return { type: 'category', id: cat.id, label: `${cat.name}\n${prices || 'Belum tersedia'}` };
       });
       entries.push({ type: 'order', label: 'Pesanan saya' }, { type: 'help', label: 'Hubungi admin' });
@@ -54,15 +55,15 @@ export class BuyerNavigation {
       const cat = catalog.categories.find(row => row.id === categoryId);
       if (!cat) return menu();
       const rows = catalog.variants.filter(v => v.category_id === categoryId && !v.archived);
-      const entries = rows.map(v => ({ type: 'variant', id: v.id, label: `${v.name}\n${money(v.price)} · ${v.ready ? 'Ready' : 'Kosong'}\n*Deskripsi*\n${v.terms}` }));
+      const entries = rows.map(v => ({ type: 'variant', id: v.id, label: `${v.name}\n${money(v.price)} · ${availability(v)}\n*Deskripsi*\n${v.terms}` }));
       entries.push({ type: 'home', label: 'Kembali ke katalog' }, { type: 'help', label: 'Hubungi admin' });
       return options(cat.name, [rows.length ? '' : 'Belum ada varian.'], { stage: 'variant', categoryId }, entries);
     };
     const quantity = async state => {
       const v = (await api.catalog()).variants.find(row => row.id === state.variantId && !row.archived);
-      if (!v?.ready) { await menu(); return info('Varian sedang Kosong. Pilih produk lain.'); }
-      await save({ stage: 'quantity', variantId: v.id, categoryId: v.category_id, price: v.price, terms: v.terms });
-      return say(renderMessage('MAZY STORE · JUMLAH', [`${v.name}\nHarga satuan: ${money(v.price)}\n*Deskripsi*\n${v.terms}`, `Masukkan kuantitas 1–${this.config.maxQuantity}.`, '/kembali: pilih varian\n/menu: katalog utama']));
+      if ((!v || available(v)<1)) { await menu(); return info('Varian sedang Kosong. Pilih produk lain.'); }
+      await save({ stage: 'quantity', variantId: v.id, categoryId: v.category_id, price: v.price, terms: v.terms, deliveryMode: v.delivery_mode || 'manual' });
+      return say(renderMessage('MAZY STORE · JUMLAH', [`${v.name}\nHarga satuan: ${money(v.price)}\n*Deskripsi*\n${v.terms}`, `Masukkan kuantitas 1–${Math.min(this.config.maxQuantity,available(v))}.`, '/kembali: pilih varian\n/menu: katalog utama']));
     };
     if (command === '/menu' || command === '/start') return menu();
     if (command === '/pesanan') return active();
@@ -114,17 +115,18 @@ export class BuyerNavigation {
       return menu();
     }
     if (command.startsWith('/')) return info('Perintah tersedia:\n/menu: katalog\n/pesanan: status order\n/done: sudah membayar\n/batal: batalkan sebelum pembayaran disetujui\n/setujui: setujui penawaran refund\n/chat: link WA admin');
-    if (c.session.buyerUiVersion !== 4) return menu();
+    if (c.session.buyerUiVersion !== 5) return menu();
     const state = c.session;
     if (state.stage === 'quantity' && !c.order) {
       if (!/^\d+$/.test(text) || !Number.isSafeInteger(Number(text)) || Number(text) < 1 || Number(text) > this.config.maxQuantity) return info(`Masukkan jumlah bulat 1–${this.config.maxQuantity}.\n/kembali: pilih varian\n/menu: katalog`);
       const v = (await api.catalog()).variants.find(row => row.id === state.variantId && !row.archived);
-      if (!v?.ready) { await menu(); return info('Varian sedang Kosong.'); }
-      if (v.price !== state.price || v.terms !== state.terms) {
+      if ((!v || available(v)<1)) { await menu(); return info('Varian sedang Kosong.'); }
+      if (v.price !== state.price || v.terms !== state.terms || (v.delivery_mode || 'manual') !== state.deliveryMode) {
         await quantity(state);
         return info('Harga atau deskripsi berubah. Masukkan ulang kuantitas untuk menggunakan harga terbaru.');
       }
-      const order = await api.createOrder({ key: event, buyer: c.buyer, variantId: v.id, quantity: Number(text), expectedPrice: state.price, expectedTerms: state.terms, qrisVersion: createHash('sha256').update(this.config.qris).digest('hex') });
+      if(Number(text)>available(v))return info(`Stok tersedia hanya ${available(v)}. Masukkan jumlah lebih kecil.`);
+      const order = await api.createOrder({ key: event, buyer: c.buyer, variantId: v.id, quantity: Number(text), expectedPrice: state.price, expectedTerms: state.terms, expectedDeliveryMode: state.deliveryMode, qrisVersion: createHash('sha256').update(this.config.qris).digest('hex') });
       await say(renderMessage('MAZY STORE · PESANAN', [orderText(order)]));
       await this.transport.payment(c.buyer, order, `${event}:payment`);
       await say(renderMessage('ORDER BARU', [orderText(order), 'Buyer belum diverifikasi membayar.\nReply pesan ini dengan /batal untuk membatalkan.']), this.config.adminJid, { ...context, orderId: order.id });
