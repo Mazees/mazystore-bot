@@ -262,3 +262,9 @@ npm test
 Tes mencakup Worker nyata dalam simulator D1, checkout kuantitas, idempotensi, persaingan satu order aktif, snapshot harga, pembayaran, refund/pembatalan, CLAIM, pencegahan relay, penomoran dinamis, format bold/regular dan Unicode, QRIS encode/decode, auth SQLite, retry, TTL, batas media, serta Express.
 
 Sebelum membuka toko: scan QR hasil dengan dua aplikasi pembayaran dan pastikan merchant/nominal benar, lakukan pilot dua buyer bersamaan, verifikasi bukti di WA admin, uji link CLAIM dan chat langsung ke admin, restart panel, dan pastikan sesi tetap ada. Pairing WA, uji pembayaran nyata, serta kapasitas hosting memerlukan lingkungan/akun milik toko dan belum digantikan tes lokal.
+
+## Uji navigasi memakai polling
+
+Dari nomor admin, kirim `/tespoll` untuk polling dua opsi dengan `selectableCount: 1` (satu jawaban). `/tespoll 255`, `/tespoll 256`, atau `/tespoll 300` menguji panjang pertanyaan; batas percobaan 1.000 karakter. Baileys terpasang tidak memvalidasi batas 255 pada judul, tetapi penerimaan dan tampilan WhatsApp harus diuji langsung. Ini bukan jaminan judul panjang didukung.
+
+Setelah satu opsi dipilih, bot mendekripsi vote langsung, memeriksa pemilik polling, memproses sekali, meminta penghapusan pesan polling untuk semua pihak, lalu mengirim hasil pilihan. Tidak menghapus seluruh percakapan dan tidak mengubah order atau menu toko. Polling uji kedaluwarsa 24 jam. Kunci polling disimpan terenkripsi secara lokal agar vote tetap dapat diproses setelah restart; jangan mengandalkan event `pollUpdates` otomatis karena jalurnya dinonaktifkan pada versi Baileys ini. Tidak memerlukan migrasi D1, deploy Worker, atau dependency baru.

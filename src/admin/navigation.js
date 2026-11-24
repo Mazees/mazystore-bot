@@ -1,3 +1,4 @@
+import { PollTest } from '../poll.js';
 import { parseStock, encryptStock, decryptStock, availability } from '../inventory.js';
 import { randomUUID } from 'node:crypto';
 import { screen, orderDetails, variantDetails, money, phone, date, statusLabels, orderStatus } from './render.js';
@@ -54,6 +55,13 @@ export class AdminNavigation {
     const command = text.split(/\s+/)[0].toLowerCase();
     try {
       if (['/admin','/menu','/start'].includes(command)) return await this.show(ctx, { screen: 'home' });
+      if(command==='/tespoll') {
+        const value=text.slice(command.length).trim();
+        if(value && !/^\d+$/.test(value))return ctx.send(message.jid,'Gunakan /tespoll atau /tespoll 256.',null);
+        const length=value ? Number(value) : 0;
+        if(length>1000)return ctx.send(message.jid,'Batas percobaan 1000 karakter.',null);
+        return await new PollTest(this.local,this.transport).create(message.jid,length);
+      }
       if (shortcuts[command] && (command !== '/batal' || message.quotedId)) return await this.shortcut(ctx, command, text.slice(command.length).trim(), event);
       if (command === '/post') {
         if (text !== command || !ctx.state || ctx.state.uiVersion !== UI_VERSION || Date.now() - ctx.state.at > TTL || ctx.state.screen !== 'order') {

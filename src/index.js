@@ -1,3 +1,4 @@
+import { PollTest } from './poll.js';
 import makeWASocket, { BufferJSON, DisconnectReason, downloadContentFromMessage, jidNormalizedUser, normalizeMessageContent } from 'baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
@@ -24,6 +25,7 @@ const auth = sqliteAuth(local);
 const transport = new Transport(local, api, config);
 const status = { whatsapp: false, database: false, stopping: false };
 const bot = new StoreBot(api, transport, config, local, () => ({ ...status }), details => logger.error(details, 'Permintaan admin gagal'));
+const polls = new PollTest(local,transport);
 const delivery = new AutoDelivery(api,transport,local,config);
 let socket;
 let reconnect;
@@ -50,6 +52,10 @@ async function processMessage(m, sock) {
     local.markSeen(seenId);
     await transport.text(jid, 'Identitas WhatsApp belum tersinkron. Coba kirim pesan lagi setelah beberapa saat.', `${seenId}:identity`);
     return;
+  }
+  if(content.pollUpdateMessage) {
+    try {await polls.vote(m,content,buyer,sock);}catch {logger.warn('Vote polling uji belum berhasil diproses.');}
+    local.markSeen(seenId);return;
   }
   let image;
   if (content.imageMessage) {
