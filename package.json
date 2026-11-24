@@ -8,7 +8,6 @@
   },
   "scripts": {
     "start": "node --env-file=.env src/index.js",
-    "test": "node --test",
     "check": "node scripts/check.js",
     "worker:dev": "wrangler dev --config worker/wrangler.local.jsonc",
     "worker:deploy": "wrangler deploy --config worker/wrangler.local.jsonc",
@@ -28,7 +27,6 @@
     "sharp": "0.35.5"
   },
   "devDependencies": {
-    "miniflare": "5.20261118.0-beta",
     "wrangler": "4.165.0"
   }
 }

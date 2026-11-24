@@ -88,7 +88,7 @@ Pastikan `/home/container`/folder project tetap tersimpan setelah restart. Panel
 
 Menu buyer/admin, detail order, pembayaran, CLAIM, dan caption foto mengikuti gaya Mazy Store: header dekoratif pendek, judul tebal, pemisah bagian, serta pilihan bernomor 01, 02, dan seterusnya. Pilihan produk memakai blok terbuka ┌ / │ / └; rincian dan petunjuk memakai teks regular. Tidak memakai monospace atau pemotongan lebar kolom. Input 1 maupun 01 memilih item yang sama. Harga, jumlah katalog dan label pilihan tetap berasal dari database. WhatsApp membungkus teks sesuai layar; ID dan link tetap utuh.
 
-Semua pilihan memakai **1, 2, 3, ... sesuai urutan layar**, termasuk Kembali dan Beranda. Tidak ada nomor navigasi khusus 0, 00, 6/7, atau 8/9. Saat mengisi nama, harga, alasan, atau kuantitas, gunakan `/kembali`; angka adalah data, bukan navigasi. `/admin` membuka beranda admin dan `/menu` membuka katalog buyer (atau beranda jika pengirim adalah admin).
+Semua pilihan navigasi menggunakan polling satu jawaban, termasuk Kembali dan Beranda. Angka yang diketik hanya untuk data seperti harga dan kuantitas; tidak memilih menu. `/admin` dan `/menu` tetap menjadi pintu masuk.
 
 Jumlah varian hanya ditampilkan pada menu admin di samping kategori, misalnya `CHATGPT API KEY (0)`. Varian Ready dan Kosong termasuk hitungan tersebut. Buyer melihat harga varian Ready atau Belum tersedia, tanpa hitungan `(n)`. Kategori kosong pada admin menampilkan Tambah varian, Ubah nama katalog, Hapus katalog, Kembali, dan Beranda.
 
@@ -101,7 +101,6 @@ Jumlah varian hanya ditampilkan pada menu admin di samping kategori, misalnya `C
 | `/done` | Menyatakan sudah membayar; bot meminta foto bukti, belum lunas |
 | `/batal` | Langsung batalkan selama pembayaran belum disetujui, termasuk setelah `/done`, saat verifikasi, atau setelah bukti ditolak; order Diproses tidak bisa dibatalkan dan harus melalui refund |
 | `/chat` | Link WA pribadi admin; tidak mengaktifkan relay |
-| `/kembali` | Kembali dari isian ke langkah sebelumnya |
 
 Jumlah 1–100 per order (bisa diturunkan melalui `MAX_QUANTITY`). Satu buyer satu order aktif; tidak ada kedaluwarsa otomatis. Harga dan deskripsi disalin ke order. Setelah buyer mengisi kuantitas, order dan QR pembayaran langsung dibuat. Jika harga/deskripsi berubah dari yang terakhir ditampilkan, buyer mendapat rincian terbaru dan diminta mengisi ulang jumlah.
 
@@ -151,7 +150,7 @@ Di **Pesanan & pembayaran → Semua pesanan & riwayat → Selesai → pilih ID**
 
 Autotesti memakai pengiriman gambar dan caption secara langsung, tanpa antrean dan tanpa retry otomatis. Untuk kompatibilitas Baileys rc14, gambar saluran diunggah mentah ke endpoint newsletter/newsletter-image, memakai media handle dan metadata gambar pada stanza newsletter. Jalur ini khusus saluran; gambar bukti dan QRIS chat pribadi tetap memakai jalur Baileys biasa. Pesan sukses hanya diberikan setelah ACK server dengan ID posting saluran diterima. ID lokal sendMessage saja tidak dianggap sukses. Penolakan server atau upload gagal ditampilkan sebagai gagal; timeout/ACK tanpa ID server ditampilkan sebagai belum pasti. Posting yang dihapus boleh diposting ulang manual dengan ID pengiriman baru. Jika file gambar tidak dapat dibaca, posting dihentikan dengan petunjuk untuk memperbarui aset; tidak mengirim posting teks terpisah. Setiap posting memeriksa ulang role bot. Jika bot bukan lagi admin, fitur dinonaktifkan. Kegagalan koneksi/pemeriksaan role tidak mengubah pengaturan. Posting gagal tetap mempertahankan order Selesai dan memberi pemberitahuan kepada admin. Pengiriman yang timeout atau hasilnya tidak pasti harus diperiksa di saluran sebelum mencoba manual agar tidak menggandakan posting. Saluran yang baru disimpan mempertahankan status Aktif/Nonaktif sebelumnya.
 
-Nomor pilihan mengikuti layar. Semua item katalog, varian, filter status, order, dan pengiriman bermasalah ditampilkan sekaligus tanpa pagination. Pesan panjang tetap dipecah otomatis menjadi beberapa pesan WA dengan nomor pilihan yang berlanjut; gunakan daftar dari menu terbaru. Pilihan dan draft kedaluwarsa setelah 30 menit. Tindakan langsung dijalankan setelah dipilih, tanpa layar konfirmasi. Penolakan bukti, pembatalan admin, dan awal refund tetap meminta alasan; setelah alasan dikirim, tindakan langsung dijalankan. Data yang berubah sejak menu ditampilkan harus diperiksa ulang.
+Pilihan mengikuti polling yang sedang aktif dan kedaluwarsa setelah 30 menit. Daftar panjang memakai halaman polling berisi 10 item. Input nama, harga, alasan, dan stok tetap diketik; Kembali dan Beranda tersedia melalui polling. Tindakan berjalan tanpa layar konfirmasi tambahan.
 
 Jika terjadi error, `ADMIN_INTERNAL` berarti kegagalan kode menu, `API_NETWORK` berarti koneksi/timeout Worker, `API_RESPONSE` berarti respons tidak sesuai (misalnya URL salah), dan `API_HTTP` menampilkan status penolakan/gangguan Worker. Console mencatat kode, jenis error, layar, dan lokasi source tanpa isi pesan atau secret. Periksa status order sebelum mengulangi tindakan. Request baca serta pembuatan/tindakan order dengan kunci idempotensi mencoba ulang satu kali saat gangguan koneksi/5xx; perubahan katalog tidak diulang otomatis.
 
@@ -181,12 +180,6 @@ Status varian adalah **Ready / Kosong**. Varian baru selalu Kosong. Lengkapi Des
 **Menambah produk/katalog utama:** `/admin` → Kelola katalog → Tambah katalog → ketik nama. Nama maksimal 80 karakter; spasi dirapikan dan huruf disimpan kapital. Nama yang sudah ada ditolak. Setelah disimpan, kamu langsung masuk ke katalog baru dengan pilihan Tambah varian. Katalog baru otomatis muncul pada buyer sebagai Belum tersedia sampai ada varian yang dibuka. Katalog tidak lagi terbatas pada tujuh kategori awal; penambahan katalog tidak membuat atau membuka varian otomatis. `/kembali` membatalkan langkah isian tanpa menambah data.
 
 **Ubah/hapus katalog:** pilih katalog pada Kelola katalog → Ubah nama katalog (ketik nama baru) atau Hapus katalog (langsung dihapus). Hapus menghilangkan katalog dan seluruh variannya dari admin/buyer serta menolak pembelian baru. Tidak ada menu arsip/pulihkan katalog. Pesanan yang sudah dibuat mempertahankan nama dan rincian saat pembelian serta tetap dapat diselesaikan. Nama katalog yang sudah dihapus boleh dipakai untuk katalog baru.
-
-### Mencoba checkout melalui chat nomor bot sendiri
-
-Buka WhatsApp akun bot → chat ke nomornya sendiri → `/menu`. Pilihan produk, kuantitas, `/done`, dan foto bukti mengikuti alur buyer biasa tanpa prefix/flag khusus. Pesan otomatis bot dikecualikan agar tidak terjadi loop; pesan `fromMe` ke orang lain tidak menjadi input buyer. Akses admin tetap dari nomor admin terpisah.
-
-Order dan QRIS tersebut **asli**, bukan sandbox. Tidak perlu mentransfer uang untuk mencoba navigasi; persetujuan pembayaran tetap manual dan CLAIM baru dikirim setelah disetujui.
 
 ### Memperbarui instalasi yang sudah berjalan
 
@@ -228,8 +221,6 @@ npx wrangler d1 export mazy-store --remote --output=mazy-store-backup.sql --conf
 
 Lakukan backup di luar hosting setiap hari saat toko aktif. Backup lama mungkin masih berisi data sementara pada waktu backup; hapus backup sesi lama setelah 7 hari dan simpan kunci secara privat. Restore D1 hanya saat bot dihentikan agar data transaksi tidak bersilangan.
 
-## Pengujian
-
 ### Gudang stok dan Auto Delivery
 
 Semua varian dan order lama tetap **Manual**. Buka `/admin → Kelola katalog → kategori → varian → Ubah ke Otomatis` untuk mengaktifkan gudang varian tersebut. Mode Manual memakai Ready/Kosong dan CLAIM ke admin; mode Otomatis memakai jumlah stok tersedia. Mengubah mode hanya berlaku untuk order baru.
@@ -252,23 +243,10 @@ Sesudah admin `/setujui` pembayaran, bot mengirim satu pesan barang per unit sto
 
 Restart tidak mengalokasikan ulang atau mengulang kiriman yang mungkin sudah sampai. Hasil kiriman meragukan diberitahukan ke admin dan tidak dapat diulang dari menu antrean umum. Periksa chat buyer; admin dapat `/selesai` sesudah memastikan penyerahan. Refund tetap membutuhkan persetujuan buyer dan menghentikan bagian yang belum mulai dikirim. Setelah refund selesai, stok kembali tersedia hanya jika seluruh pengiriman belum pernah dimulai; barang yang mungkin terkirim tidak dijual ulang otomatis.
 
-Migrasi `0007_inventory.sql` menambah stok, alokasi, mode snapshot order, dan catatan pengiriman. Isi stok dienkripsi oleh bot menggunakan **DATA_KEY yang sama** sebelum disimpan di D1. Cadangkan DATA_KEY secara terpisah bersama backup D1; kehilangan/mengganti kunci membuat stok lama tidak dapat dibaca. Tidak ada `.env`, dependency, atau layanan tambahan. Deploy: `npm run db:remote`, `npm run worker:deploy`, lalu perbarui/restart bot panel. Uji dengan stok dummy terlebih dahulu untuk memastikan barang terkirim, status otomatis Selesai, dan autotesti berjalan.
+Migrasi `0007_inventory.sql` menambah stok, alokasi, mode snapshot order, dan catatan pengiriman. Isi stok dienkripsi oleh bot menggunakan **DATA_KEY yang sama** sebelum disimpan di D1. Cadangkan DATA_KEY secara terpisah bersama backup D1; kehilangan/mengganti kunci membuat stok lama tidak dapat dibaca. Tidak ada `.env`, dependency, atau layanan tambahan. Deploy: `npm run db:remote`, `npm run worker:deploy`, lalu perbarui/restart bot panel.
 
-```sh
-npm run check
-npm test
-```
+## Navigasi polling
 
-Tes mencakup Worker nyata dalam simulator D1, checkout kuantitas, idempotensi, persaingan satu order aktif, snapshot harga, pembayaran, refund/pembatalan, CLAIM, pencegahan relay, penomoran dinamis, format bold/regular dan Unicode, QRIS encode/decode, auth SQLite, retry, TTL, batas media, serta Express.
+Menu buyer dan admin memakai polling satu jawaban. Pilih opsi untuk membuka submenu; polling sebelumnya diminta dihapus setelah vote diproses. Input jumlah, harga, nama, alasan, deskripsi, dan stok tetap berupa teks. Daftar lebih dari 12 opsi dibagi menjadi halaman polling (10 item dan pilihan pindah halaman). Isi menu tetap berada di pertanyaan polling.
 
-Sebelum membuka toko: scan QR hasil dengan dua aplikasi pembayaran dan pastikan merchant/nominal benar, lakukan pilot dua buyer bersamaan, verifikasi bukti di WA admin, uji link CLAIM dan chat langsung ke admin, restart panel, dan pastikan sesi tetap ada. Pairing WA, uji pembayaran nyata, serta kapasitas hosting memerlukan lingkungan/akun milik toko dan belum digantikan tes lokal.
-
-## Uji navigasi memakai polling
-
-Dari nomor admin, kirim `/tespoll` untuk polling dua opsi dengan `selectableCount: 1` (satu jawaban). `/tespoll 255`, `/tespoll 256`, atau `/tespoll 300` menguji panjang pertanyaan; batas percobaan 1.000 karakter. Baileys terpasang tidak memvalidasi batas 255 pada judul, tetapi penerimaan dan tampilan WhatsApp harus diuji langsung. Ini bukan jaminan judul panjang didukung.
-
-Setelah satu opsi dipilih, bot mendekripsi vote langsung, memeriksa pemilik polling, memproses sekali, meminta penghapusan pesan polling untuk semua pihak, lalu mengirim hasil pilihan. Tidak menghapus seluruh percakapan dan tidak mengubah order atau menu toko. Polling uji kedaluwarsa 24 jam. Kunci polling disimpan terenkripsi secara lokal agar vote tetap dapat diproses setelah restart; jangan mengandalkan event `pollUpdates` otomatis karena jalurnya dinonaktifkan pada versi Baileys ini. Tidak memerlukan migrasi D1, deploy Worker, atau dependency baru.
-
-`/tespoll` sekarang membuka katalog utama buyer (termasuk jika dijalankan admin), lalu mengirim polling pilihan kategori/Pesanan saya/Hubungi admin. Vote membuka submenu melalui handler buyer yang sama seperti input angka. Pilihan menu yang sudah berubah ditolak dan diminta membuka polling baru. Pemeriksaan PN/LID dan event vote tipe append turut didukung. `/tespoll 255` dan variasi panjang tetap hanya menguji judul dengan dua opsi dummy.
-
-Isi menu utama (header, kategori, harga/stok, dan petunjuk memilih) kini dimasukkan utuh ke bagian pertanyaan `/tespoll`, tanpa pesan menu terpisah. Panjang pertanyaan tidak dipotong ke 255 karakter untuk percobaan ini; WhatsApp bisa menolak atau memotongnya. `/menu` biasa tetap menggunakan pesan teks.
+Setelah QRIS ditampilkan, pilih **Sudah Bayar** pada polling pembayaran untuk melanjutkan ke pengiriman foto bukti. Mengetik `/done` membuka polling yang sama. Tindakan admin pada order dan foto bukti tersedia melalui polling terikat ID order. Shortcut reply `/setujui`, `/selesaikan`, `/tolakbukti`, `/batal`, dan `/refund` tetap didukung untuk pesan pesanan lama. `/menu` dan `/admin` merupakan pintu masuk; mengetik angka tidak memilih menu. Navigasi Kembali/Beranda menggunakan polling, termasuk saat mengisi form.

@@ -106,6 +106,9 @@ export class LocalStore {
   }
   cleanup() {
     const cutoff = Date.now() - DAY;
+    for(const row of this.db.prepare("SELECT key,value FROM auth WHERE key LIKE 'poll:%'").all()) {
+      if(this.decrypt(row.value).created<Date.now()-30*60000)this.authSet(row.key,null);
+    }
     this.db.prepare("DELETE FROM outbox WHERE created<? AND status!='broadcast'").run(cutoff);
     this.db.prepare('DELETE FROM retry_messages WHERE created<?').run(cutoff);
     this.db.prepare('DELETE FROM seen WHERE created<?').run(Date.now() - 7 * DAY);

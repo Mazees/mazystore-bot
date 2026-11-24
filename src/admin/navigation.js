@@ -1,4 +1,4 @@
-import { PollTest } from '../poll.js';
+import { NavigationPoll } from '../poll.js';
 import { parseStock, encryptStock, decryptStock, availability } from '../inventory.js';
 import { randomUUID } from 'node:crypto';
 import { screen, orderDetails, variantDetails, money, phone, date, statusLabels, orderStatus } from './render.js';
@@ -20,7 +20,7 @@ export class AdminNavigation {
   constructor(api, transport, local, runtime = () => ({}), config = {}, reportError = () => {}) {
     this.api = api; this.transport = transport; this.local = local; this.runtime = runtime;
     this.adminNumber = config.adminNumber || config.adminJid?.split('@')[0];
-    this.reportError = reportError; this.dataKey = config.dataKey;
+    this.polls=new NavigationPoll(local,transport); this.reportError = reportError; this.dataKey = config.dataKey;
     this.testimonials = new Testimonials(local, transport);
   }
 
@@ -55,13 +55,6 @@ export class AdminNavigation {
     const command = text.split(/\s+/)[0].toLowerCase();
     try {
       if (['/admin','/menu','/start'].includes(command)) return await this.show(ctx, { screen: 'home' });
-      if(command==='/tespoll') {
-        const value=text.slice(command.length).trim();
-        if(value && !/^\d+$/.test(value))return ctx.send(message.jid,'Gunakan /tespoll atau /tespoll 256.',null);
-        const length=value ? Number(value) : 0;
-        if(length>1000)return ctx.send(message.jid,'Batas percobaan 1000 karakter.',null);
-        return await new PollTest(this.local,this.transport).create(message.jid,length,null,message.buyer);
-      }
       if (shortcuts[command] && (command !== '/batal' || message.quotedId)) return await this.shortcut(ctx, command, text.slice(command.length).trim(), event);
       if (command === '/post') {
         if (text !== command || !ctx.state || ctx.state.uiVersion !== UI_VERSION || Date.now() - ctx.state.at > TTL || ctx.state.screen !== 'order') {
@@ -94,7 +87,8 @@ export class AdminNavigation {
         return await this.show(ctx, view, `Perintah lama tidak dijalankan. Buka /admin → ${target}.`);
       }
       if (!ctx.state || ctx.state.uiVersion !== UI_VERSION || Date.now() - ctx.state.at > TTL) return await this.show(ctx, { screen: 'home' }, 'Pilihan dan draft lama sudah berakhir. Mulai dari sini.');
-      if (command === '/kembali' || command === '/batal') return await this.show(ctx, ctx.state.back || { screen: 'home' });
+      if(message.pollOption) {const option=ctx.state.options?.[text];if(option)return await this.select(ctx,option,event);}
+      if (command === '/kembali' || command === '/batal') return await this.show(ctx,ctx.state,'Gunakan polling untuk Kembali atau Beranda.');
       if (message.image) return await this.show(ctx, ctx.state, 'Gambar dan pesan dikirim langsung melalui WA buyer, bukan bot.');
       if (ctx.state.screen === 'testimonialLink') {
         try {
@@ -112,8 +106,8 @@ export class AdminNavigation {
       if (ctx.state.screen === 'add') return await this.addInput(ctx, text);
       if (ctx.state.screen === 'addCategory') return await this.categoryInput(ctx, text);
       if (ctx.state.screen === 'renameCategory') return await this.renameCategoryInput(ctx, text);
-      const option = ctx.state.options?.[/^\d+$/.test(text) ? String(Number(text)) : text];
-      if (!option) return await this.show(ctx, ctx.state, 'Pilihan tidak valid. Gunakan angka yang ditampilkan.');
+      const option = message.pollOption && ctx.state.options?.[/^\d+$/.test(text) ? String(Number(text)) : text];
+      if (!option) return await this.show(ctx, ctx.state, 'Pilihan tidak valid. Gunakan pilihan pada polling.');
       return await this.select(ctx, option, event);
     } catch (error) {
       if (error.status === 409) {
@@ -125,6 +119,14 @@ export class AdminNavigation {
       }
       return this.failure(message, error, ctx.state);
     }
+  }
+
+  async orderPoll(message,owner,menu,index) {
+    const order=await this.api.order(menu.orderId);
+    const ctx={owner,message,state:{screen:'order',orderId:order.id,version:order.version,back:{screen:'orders',filter:'all'}},send:(jid,text,context)=>this.transport.text(jid,text,message.id+':'+randomUUID(),context),save:async state=>{ctx.state=state;await this.api.session(owner.buyer,{...owner.session,admin:state});}};
+    const choice=menu.options[index];
+    if(order.status!==menu.status || !orderActions(order).some(a=>a.id===choice.id))return this.show(ctx,ctx.state,'Status pesanan berubah. Pilih tindakan dari detail terbaru.');
+    return this.select(ctx,{type:'orderAction',id:choice.id},message.id);
   }
 
   async contact(ctx, buyer, orderId = null) {
@@ -302,12 +304,12 @@ export class AdminNavigation {
     }
     if (body === undefined) return this.show(ctx, { screen: 'home' });
     const input = ['stockAdd','stockEdit'].includes(s.screen) || s.screen === 'input' || s.screen === 'add' || s.screen === 'addCategory' || s.screen === 'renameCategory' || s.screen === 'broadcastInput' || s.screen === 'testimonialLink';
-    if (!input) {
+    {
       if (s.screen !== 'home') menu.push({ type: 'back', label: 'Kembali' }, { type: 'home', label: 'Beranda' });
     }
     s.options = Object.fromEntries(menu.map((option, index) => [String(index + 1), option]));
     await ctx.save(s);
-    await ctx.send(ctx.message.jid, screen(path, body.trim(), { root: s.screen === 'home', notice, input, options: menu }), { buyer: ctx.owner.buyer, role: 'admin', kind: 'menu', menuToken: s.token });
+    await this.polls.create(ctx.message.jid,{buyer:ctx.owner.buyer,route:'admin',token:s.token,options:menu,question:screen(path,body.trim(),{root:s.screen==='home',notice,input,options:menu}).replaceAll('Balas angka untuk memilih.','Pilih satu opsi pada polling.').replaceAll('/kembali: langkah sebelumnya\n/admin: beranda','Gunakan polling untuk Kembali atau Beranda.')});
   }
 
   async select(ctx, option, event) {

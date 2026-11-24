@@ -1,3 +1,4 @@
+import { NavigationPoll } from './poll.js';
 import { available, availability } from './inventory.js';
 import { createHash } from 'node:crypto';
 import { renderMessage, numbered } from './ui.js';
@@ -8,7 +9,7 @@ export const labels = statusLabels;
 const orderText = o => `ID Pesanan: ${o.id}\nProduk: ${o.product}\nVarian: ${o.variant}\nJumlah: ${o.quantity}\nHarga satuan: ${money(o.unit_price)}\nTotal: ${money(o.total)}\nStatus: ${orderStatus(o)}${o.cancel_requested ? '\nAda permintaan pembatalan.' : ''}`;
 
 export class BuyerNavigation {
-  constructor(api, transport, config) { this.api = api; this.transport = transport; this.config = config; this.adminNumber = config.adminNumber || config.adminJid.split('@')[0]; }
+  constructor(api, transport, config, local) { this.polls=new NavigationPoll(local,transport); this.api = api; this.transport = transport; this.config = config; this.adminNumber = config.adminNumber || config.adminJid.split('@')[0]; }
 
   async handle(message) {
     let sequence = 0;
@@ -29,16 +30,18 @@ export class BuyerNavigation {
     const action = (name, extra = {}) => api.action(c.order.id, { action: name, key: `${event}:${name}`, actor: c.buyer, ...extra });
     const info = (value, title = 'MAZY STORE · INFO') => say(renderMessage(title, [value]));
     const help = () => say(helpMessage(this.adminNumber));
+    const commands=(question,entries,orderId=null)=>this.polls.create(message.jid,{buyer:c.buyer,route:'command',selfChat:message.selfChat,question,options:entries,orderId});
+    const paymentPoll=o=>commands(renderMessage('MAZY STORE · PEMBAYARAN',[orderText(o),'Setelah membayar, pilih Sudah Bayar lalu kirim bukti pembayaran.']),[{label:'Sudah Bayar',command:'/done'},{label:'Batalkan pesanan',command:'/batal'},{label:'Hubungi admin',command:'/chat'}],o.id);
     const active = async () => {
       if (!c.order) return info('Tidak ada pesanan aktif. Ketik /menu untuk belanja atau /chat untuk menghubungi admin.');
-      await say(renderMessage('MAZY STORE · PESANAN', [orderText(c.order), c.order.status === 'awaiting_payment' ? 'Setelah membayar, ketik /done.' : c.order.status === 'awaiting_proof' ? 'Kirim foto bukti pembayaran.' : c.order.status === 'review' ? 'Bukti sedang diperiksa admin.' : c.order.status === 'refund_pending' ? c.order.refund_accepted ? 'Refund sudah kamu setujui. Tunggu admin mengembalikan uang.\n/chat - Hubungi admin' : 'Admin menawarkan refund. Uang belum dikembalikan.\n/setujui - Setujui refund agar admin mengembalikan uang\n/chat - Hubungi admin jika belum sepakat' : c.order.delivery_mode === 'auto' ? 'Barang dikirim otomatis oleh bot. Status otomatis Selesai setelah seluruh barang berhasil dikirim. /chat untuk bantuan.' : 'Penyerahan barang dilakukan melalui chat pribadi admin.', ['awaiting_payment','awaiting_proof','review'].includes(c.order.status) ? '/batal - Batalkan pesanan langsung' : '']));
-      if (c.order.status === 'awaiting_payment') await this.transport.payment(c.buyer, c.order, `${event}:payment`);
+      await say(renderMessage('MAZY STORE · PESANAN', [orderText(c.order), c.order.status === 'awaiting_payment' ? 'Pilih Sudah Bayar pada polling pembayaran.' : c.order.status === 'awaiting_proof' ? 'Kirim foto bukti pembayaran.' : c.order.status === 'review' ? 'Bukti sedang diperiksa admin.' : c.order.status === 'refund_pending' ? c.order.refund_accepted ? 'Refund sudah kamu setujui. Tunggu admin mengembalikan uang.\n/chat - Hubungi admin' : 'Admin menawarkan refund. Uang belum dikembalikan.\n/setujui - Setujui refund agar admin mengembalikan uang\n/chat - Hubungi admin jika belum sepakat' : c.order.delivery_mode === 'auto' ? 'Barang dikirim otomatis oleh bot. Status otomatis Selesai setelah seluruh barang berhasil dikirim. /chat untuk bantuan.' : 'Penyerahan barang dilakukan melalui chat pribadi admin.', ['awaiting_payment','awaiting_proof','review'].includes(c.order.status) ? '/batal - Batalkan pesanan langsung' : '']));
+      if (c.order.status === 'awaiting_payment') {await this.transport.payment(c.buyer,c.order,`${event}:payment`);await paymentPoll(c.order);}
       if (c.order.status === 'processing' && c.order.delivery_mode !== 'auto') await say(await claimMessage(api, this.adminNumber, c.order));
+      if(c.order.status!=='awaiting_payment')await commands('MAZY STORE | PESANAN\n'+orderText(c.order),[...(['awaiting_proof','review'].includes(c.order.status)?[{label:'Batalkan pesanan',command:'/batal'}]:[]),...(c.order.status==='refund_pending'&&!c.order.refund_accepted?[{label:'Setujui refund',command:'/setujui'}]:[]),{label:'Hubungi admin',command:'/chat'},{label:'Katalog utama',command:'/menu'}],c.order.id);
     };
     const options = async (title, sections, state, entries) => {
       await save({ ...state, options: entries });
-      if(state.stage==='menu' && message.pollMenu) return message.pollMenu(renderMessage(title,[...sections,numbered(entries),'Pilih satu opsi pada polling di bawah.']),entries);
-      return say(renderMessage(title, [...sections, numbered(entries), `*${state.stage === 'menu' ? 'CARA PILIH PRODUK' : 'PILIHAN'}*\nBalas angka *1 sampai ${entries.length}* untuk memilih.\n/chat - Hubungi admin`]));
+      return this.polls.create(message.jid,{buyer:c.buyer,route:'buyer',stage:state.stage,selfChat:message.selfChat,options:entries,question:renderMessage(title,[...sections,numbered(entries),'Pilih satu opsi pada polling.'])});
     };
     const menu = async () => {
       const { categories, variants } = await api.catalog();
@@ -64,7 +67,8 @@ export class BuyerNavigation {
       const v = (await api.catalog()).variants.find(row => row.id === state.variantId && !row.archived);
       if ((!v || available(v)<1)) { await menu(); return info('Varian sedang Kosong. Pilih produk lain.'); }
       await save({ stage: 'quantity', variantId: v.id, categoryId: v.category_id, price: v.price, terms: v.terms, deliveryMode: v.delivery_mode || 'manual' });
-      return say(renderMessage('MAZY STORE · JUMLAH', [`${v.name}\nHarga satuan: ${money(v.price)}\n*Deskripsi*\n${v.terms}`, `Masukkan kuantitas 1–${Math.min(this.config.maxQuantity,available(v))}.`, '/kembali: pilih varian\n/menu: katalog utama']));
+      await commands('Navigasi pengisian jumlah',[{label:'Kembali ke varian',command:'/kembali'},{label:'Katalog utama',command:'/menu'}]);
+      return say(renderMessage('MAZY STORE · JUMLAH', [`${v.name}\nHarga satuan: ${money(v.price)}\n*Deskripsi*\n${v.terms}`, `Masukkan kuantitas 1–${Math.min(this.config.maxQuantity,available(v))}.`, 'Gunakan polling untuk kembali atau membuka katalog.']));
     };
     if (command === '/menu' || command === '/start') return menu();
     if (command === '/pesanan') return active();
@@ -89,11 +93,13 @@ export class BuyerNavigation {
     }
     if (command === '/done') {
       if (!c.order) return info('Belum ada order aktif. Ketik /menu.');
+      if(c.order.status==='awaiting_payment' && !message.pollAction)return paymentPoll(c.order);
       if (c.order.status === 'awaiting_payment') {
         const updated = await action('done');
-        await notice(renderMessage('MENUNGGU BUKTI BAYAR', [orderText(updated), 'Buyer mengetik /done. Tunggu foto bukti dan periksa uang masuk.', 'Reply bukti: /setujui\n/batal - Batalkan pesanan']));
+        await notice(renderMessage('MENUNGGU BUKTI BAYAR', [orderText(updated), 'Buyer memilih Sudah Bayar. Tunggu foto bukti dan periksa uang masuk.', 'Reply bukti: /setujui\n/batal - Batalkan pesanan']));
       }
       else if (c.order.status !== 'awaiting_proof') return active();
+      await commands('Kirim foto bukti pembayaran pada chat ini.',[{label:'Batalkan pesanan',command:'/batal'},{label:'Hubungi admin',command:'/chat'}],c.order.id);
       return say(renderMessage('MAZY STORE · BUKTI BAYAR', [`ID Pesanan: ${c.order.id}`, 'Kirim foto bukti pembayaran. Pembayaran baru dianggap lunas setelah diperiksa admin.\n/batal - Batalkan pesanan langsung']));
     }
     if (message.image) {
@@ -101,8 +107,8 @@ export class BuyerNavigation {
       if (c.order?.status === 'awaiting_proof' || c.order?.status === 'review' && (c.order.proof_relay !== 'sent' || c.order.cancel_requested)) {
         const buffer = await message.image();
         if (c.order.status === 'awaiting_proof') await action('submit_proof');
-        let caption = renderMessage('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nProduk: ${c.order.product}\nVarian: ${c.order.variant}\nJumlah: ${c.order.quantity}\nTotal: ${money(c.order.total)}`, 'Reply foto ini:\n/setujui\n/tolakbukti alasan\n/batal - Batalkan pesanan']);
-        if (caption.length > 1000) caption = renderMessage('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nTotal: ${money(c.order.total)}`, 'Reply: /setujui\n/batal - Batalkan pesanan']);
+        let caption = renderMessage('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nProduk: ${c.order.product}\nVarian: ${c.order.variant}\nJumlah: ${c.order.quantity}\nTotal: ${money(c.order.total)}`, 'Pilih tindakan pada polling pesanan.']);
+        if (caption.length > 1000) caption = renderMessage('BUKTI PEMBAYARAN', [`ID: ${c.order.id}\nBuyer: ${c.buyer.split('@')[0]}\nTotal: ${money(c.order.total)}`, 'Pilih tindakan pada polling pesanan.']);
         await this.transport.image(this.config.adminJid, buffer, caption, context);
         await action('proof_sent');
         return info('Bukti berhasil diteruskan. Menunggu verifikasi pembayaran oleh admin.\n/batal - Batalkan pesanan langsung');
@@ -110,6 +116,7 @@ export class BuyerNavigation {
       if (c.order?.status === 'review') return info('Bukti sudah diteruskan dan menunggu verifikasi.\n/batal - Batalkan pesanan langsung\n/chat - Hubungi admin');
       return say(helpMessage(this.adminNumber));
     }
+    if (command === '/kembali' && !message.pollAction)return info('Gunakan pilihan Kembali pada polling.');
     if (command === '/kembali') {
       if (c.order) return menu();
       if (c.session.stage === 'quantity') return variants(c.session.categoryId);
@@ -119,7 +126,7 @@ export class BuyerNavigation {
     if (c.session.buyerUiVersion !== 5) return menu();
     const state = c.session;
     if (state.stage === 'quantity' && !c.order) {
-      if (!/^\d+$/.test(text) || !Number.isSafeInteger(Number(text)) || Number(text) < 1 || Number(text) > this.config.maxQuantity) return info(`Masukkan jumlah bulat 1–${this.config.maxQuantity}.\n/kembali: pilih varian\n/menu: katalog`);
+      if (!/^\d+$/.test(text) || !Number.isSafeInteger(Number(text)) || Number(text) < 1 || Number(text) > this.config.maxQuantity) return info(`Masukkan jumlah bulat 1–${this.config.maxQuantity}.\nGunakan polling untuk kembali atau membuka katalog.`);
       const v = (await api.catalog()).variants.find(row => row.id === state.variantId && !row.archived);
       if ((!v || available(v)<1)) { await menu(); return info('Varian sedang Kosong.'); }
       if (v.price !== state.price || v.terms !== state.terms || (v.delivery_mode || 'manual') !== state.deliveryMode) {
@@ -130,11 +137,12 @@ export class BuyerNavigation {
       const order = await api.createOrder({ key: event, buyer: c.buyer, variantId: v.id, quantity: Number(text), expectedPrice: state.price, expectedTerms: state.terms, expectedDeliveryMode: state.deliveryMode, qrisVersion: createHash('sha256').update(this.config.qris).digest('hex') });
       await say(renderMessage('MAZY STORE · PESANAN', [orderText(order)]));
       await this.transport.payment(c.buyer, order, `${event}:payment`);
+      await paymentPoll(order);
       await say(renderMessage('ORDER BARU', [orderText(order), 'Buyer belum diverifikasi membayar.\nReply pesan ini dengan /batal untuk membatalkan.']), this.config.adminJid, { ...context, orderId: order.id });
       await save({ stage: 'ordered' });
       return;
     }
-    const option = /^\d+$/.test(text) ? state.options?.[Number(text) - 1] : null;
+    const option = message.pollOption && /^\d+$/.test(text) ? state.options?.[Number(text) - 1] : null;
     if (option?.type === 'home') return menu();
     if (option?.type === 'help') return help();
     if (option?.type === 'order') return active();
@@ -142,6 +150,6 @@ export class BuyerNavigation {
     if (option?.type === 'category') return variants(option.id);
     if (option?.type === 'variant') return quantity({ variantId: option.id });
     if (option?.type === 'quantity') return quantity(state);
-    return info('Pilihan tidak valid. Gunakan angka pada menu terakhir.\n/menu: buka katalog\n/kembali: langkah sebelumnya');
+    return info('Pilihan tidak valid. Gunakan polling pada menu terakhir.\n/menu: buka katalog\n/kembali: langkah sebelumnya');
   }
 }

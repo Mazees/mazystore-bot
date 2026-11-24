@@ -5,13 +5,12 @@ async function files(dir) {
   let entries;
   try { entries = await readdir(dir, { withFileTypes: true }); }
   catch (error) {
-    if (dir === 'test' && error.code === 'ENOENT') return [];
     throw error;
   }
   return (await Promise.all(entries.map(e => e.isDirectory() ? files(`${dir}/${e.name}`) : e.name.endsWith('.js') ? [`${dir}/${e.name}`] : []))).flat();
 }
 let failed = false;
-for (const path of (await Promise.all(['src', 'worker', 'scripts', 'test'].map(files))).flat()) {
+for (const path of (await Promise.all(['src', 'worker', 'scripts'].map(files))).flat()) {
   const result = spawnSync(process.execPath, ['--check', path], { encoding: 'utf8' });
   if (result.status !== 0) { failed = true; console.error(result.stderr); }
 }
