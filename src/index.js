@@ -54,7 +54,7 @@ async function processMessage(m, sock) {
     return;
   }
   if(content.pollUpdateMessage) {
-    try {await polls.vote(m,content,buyer,sock);}catch {logger.warn('Vote polling uji belum berhasil diproses.');}
+    try {await polls.vote(m,content,buyer,sock,(record,index)=>bot.pollChoice(record,index));}catch {logger.warn('Vote polling uji belum berhasil diproses.');}
     local.markSeen(seenId);return;
   }
   let image;
@@ -140,8 +140,9 @@ function connect() {
     } catch { logger.error('Koneksi/pairing gagal. Periksa konfigurasi dan koneksi jaringan.'); }
   });
   sock.ev.on('messages.upsert', ({ messages, type }) => {
-    if (type !== 'notify' || status.stopping) return;
+    if (!['notify','append'].includes(type) || status.stopping) return;
     for (const message of messages) {
+      if(type==='append' && !normalizeMessageContent(message.message)?.pollUpdateMessage)continue;
       // Do not let a media burst consume all hosting RAM. Overflow stays unprocessed; buyer can resend.
       if (queued >= 100) { logger.warn('Antrean masuk penuh.'); break; }
       queued++;

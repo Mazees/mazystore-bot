@@ -25,7 +25,7 @@ export class BuyerNavigation {
     const command = text.split(/\s+/)[0].toLowerCase();
     const context = { buyer: c.buyer, orderId: c.order?.id || null, role: 'buyer', kind: 'relay', purpose: 'transaction' };
     const notice = value => say(value, this.config.adminJid, context);
-    const save = async state => { c.session = { ...state, buyerUiVersion: 5 }; await api.session(c.buyer, c.session); };
+    const save = async state => { c.session = { ...state, ...(c.session.admin ? { admin:c.session.admin } : {}), buyerUiVersion: 5 }; await api.session(c.buyer, c.session); };
     const action = (name, extra = {}) => api.action(c.order.id, { action: name, key: `${event}:${name}`, actor: c.buyer, ...extra });
     const info = (value, title = 'MAZY STORE · INFO') => say(renderMessage(title, [value]));
     const help = () => say(helpMessage(this.adminNumber));

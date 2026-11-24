@@ -60,7 +60,7 @@ export class AdminNavigation {
         if(value && !/^\d+$/.test(value))return ctx.send(message.jid,'Gunakan /tespoll atau /tespoll 256.',null);
         const length=value ? Number(value) : 0;
         if(length>1000)return ctx.send(message.jid,'Batas percobaan 1000 karakter.',null);
-        return await new PollTest(this.local,this.transport).create(message.jid,length);
+        return await new PollTest(this.local,this.transport).create(message.jid,length,null,message.buyer);
       }
       if (shortcuts[command] && (command !== '/batal' || message.quotedId)) return await this.shortcut(ctx, command, text.slice(command.length).trim(), event);
       if (command === '/post') {
