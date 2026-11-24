@@ -18,15 +18,16 @@ export class Transport {
     return socket.sendMessage(jid, content, { messageId });
   }
   async text(jid, text, id, context = null) {
-    if(context?.orderId && jid===this.config.adminJid && context.kind!=='menu')return this.orderNavigation(jid,text,context.orderId);
+    if(context?.orderId && jid===this.config.adminJid && context.kind!=='menu')return this.orderNavigation(jid,text,context.orderId,id);
     if(context?.orderId && context.role==='admin' && jid!==this.config.adminJid) {
       const order=await this.api.order(context.orderId);
       if(order.status==='refund_pending' && !order.refund_accepted)return this.polls.create(jid,{buyer:order.buyer,route:'command',orderId:order.id,question:text.replace(/\/setujui[^\n]*/g,'Pilih Setujui refund pada polling.'),options:[{label:'Setujui refund',command:'/setujui'},{label:'Hubungi admin',command:'/chat'}]});
     }
     splitMessage(text).forEach((part, index) => this.store.enqueue(`${id}:part${index}`, jid, { kind: 'text', text: part, context }));
   }
-  async orderNavigation(jid,text,orderId) {
+  async orderNavigation(jid,text,orderId,id = null) {
     const order=await this.api.order(orderId);
+    if(['cancelled','completed','refunded'].includes(order.status))return this.text(jid,text,id || `order:${orderId}:${order.version}`);
     const question=text.split('\n').filter(line=>!/^\s*(Reply|\/(setujui|tolakbukti|batal|selesaikan|selesai|refund|lanjutkan))/.test(line)).join('\n');
     return this.polls.create(jid,{buyer:this.config.adminJid,route:'order',orderId,status:order.status,question,options:orderActions(order)});
   }

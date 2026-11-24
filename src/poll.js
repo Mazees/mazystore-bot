@@ -10,6 +10,7 @@ export class NavigationPoll {
     if(page>0)shown.push({label:'Halaman sebelumnya',page:page-1});
     if(start+size<menu.options.length)shown.push({label:'Halaman berikutnya',page:page+1});
     if(!shown.length)return this.transport.text(jid,menu.question,'poll-empty:'+Date.now());
+    if(shown.length===1)shown.push({label:'Tutup',dismiss:true});
     const id=generateMessageIDV2(socket.user.id),secret=randomBytes(32),values=shown.map((o,i)=>(i+1)+'. '+Array.from(o.label).slice(0,90).join(''));
     const key={remoteJid:jid,fromMe:true,id};
     this.local.authSet('poll:'+id,{key,secret,values,shown,created:Date.now(),used:false,owner:menu.buyer,menu});
@@ -41,6 +42,7 @@ export class NavigationPoll {
     let deleted=true;
     try {await this.transport.send(record.key.remoteJid,{delete:record.key});}catch{deleted=false;}
     const choice=record.shown[record.values.indexOf(selected)];
+    if(choice.dismiss)return;
     if(choice.page!==undefined)return this.create(record.key.remoteJid,record.menu,choice.page);
     if(record.menu && onChoose) {
       await onChoose(record,choice.index);
