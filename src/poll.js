@@ -38,17 +38,22 @@ export class NavigationPoll {
     if(vote.selectedOptions?.length!==1)return;
     const selected=record.values.find(value=>createHash('sha256').update(value).digest().equals(Buffer.from(vote.selectedOptions[0])));
     if(!selected)return;
-    this.local.authSet(`poll:${id}`,{used:true,created:record.created});
-    let deleted=true;
-    try {await this.transport.send(record.key.remoteJid,{delete:record.key});}catch{deleted=false;}
-    const choice=record.shown[record.values.indexOf(selected)];
-    if(choice.dismiss)return;
-    if(choice.page!==undefined)return this.create(record.key.remoteJid,record.menu,choice.page);
-    if(record.menu && onChoose) {
-      await onChoose(record,choice.index);
-      if(!deleted)await this.transport.text(record.key.remoteJid,'Pilihan diproses, tetapi pesan polling belum berhasil dihapus.',`poll:${id}:delete-failed`);
+    const selectedIndex=record.values.indexOf(selected);
+    if(record.chosenIndex!==undefined && record.chosenIndex!==selectedIndex) {
+      await this.transport.text(record.key.remoteJid,'Pilihan sebelumnya belum selesai. Pilih kembali opsi yang sama atau buka menu baru.','poll:'+id+':different');return;
+    }
+    this.local.authSet('poll:'+id,{...record,chosenIndex:selectedIndex});
+    const choice=record.shown[selectedIndex];
+    try {
+      if(choice.page!==undefined)await this.create(record.key.remoteJid,record.menu,choice.page);
+      else if(!choice.dismiss && onChoose)await onChoose(record,choice.index);
+    }catch {
+      await this.transport.text(record.key.remoteJid,'Pilihan belum berhasil dipastikan. Periksa status pesanan. Untuk mencoba lagi, hapus centang lalu pilih kembali opsi yang sama; jangan membuat pesanan baru.','poll:'+id+':retry');
       return;
     }
+    this.local.authSet('poll:'+id,{used:true,created:record.created});
+    try {await this.transport.send(record.key.remoteJid,{delete:record.key});}
+    catch {await this.transport.text(record.key.remoteJid,'Pilihan diproses, tetapi pesan polling belum berhasil dihapus.','poll:'+id+':delete-failed');}
 
   }
 }

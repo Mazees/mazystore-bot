@@ -37,10 +37,20 @@ export class AutoDelivery {
         }
         const result=await this.api.delivery(order.id,{mode:'finish'});
         if(result.completed) {
-          await this.transport.text(order.buyer,renderMessage('MAZY STORE · PESANAN',[`ID: ${order.id}\nStatus: Selesai`,'Seluruh barang telah dikirim oleh bot. /chat untuk bantuan.']),`delivery:${order.id}:completed`);
-          await this.transport.text(this.config.adminJid,renderMessage('ADMIN · PESANAN',[`ID: ${order.id}\nStatus: Selesai`,'Penyerahan otomatis selesai.']),`delivery:${order.id}:admin-completed`,{buyer:order.buyer,orderId:order.id,role:'admin',kind:'relay',purpose:'transaction'});
-          const testimonial=await this.testimonials.post(result.order);
-          if(testimonial.status!=='disabled')await this.transport.text(this.config.adminJid,renderMessage('ADMIN · AUTOTESTI',[`ID: ${order.id}`,testimonial.message]),`delivery:${order.id}:testimoni`);
+          const outcomes=await Promise.allSettled([
+            async()=>{
+              const testimonial=await this.testimonials.post(result.order);
+              if(testimonial.status!=='disabled')await this.transport.text(this.config.adminJid,renderMessage('ADMIN · AUTOTESTI',[`ID: ${order.id}`,testimonial.message]),`delivery:${order.id}:testimoni`);
+            },
+            async()=>{
+              await this.transport.text(order.buyer,renderMessage('MAZY STORE · PESANAN',[`ID: ${order.id}\nStatus: Selesai`,'Seluruh barang telah dikirim oleh bot. /chat untuk bantuan.']),`delivery:${order.id}:completed`);
+            },
+            async()=>{
+              await this.transport.text(this.config.adminJid,renderMessage('ADMIN · PESANAN',[`ID: ${order.id}\nStatus: Selesai`,'Penyerahan otomatis selesai.']),`delivery:${order.id}:admin-completed`,{buyer:order.buyer,orderId:order.id,role:'admin',kind:'relay',purpose:'transaction'});
+            },
+          ].map(run=>run()));
+          if(outcomes.some(result=>result.status==='rejected'))throw Error('Pemberitahuan penyelesaian belum tersimpan.');
+
         }
         } catch {
           await this.transport.text(this.config.adminJid,renderMessage('ADMIN · PENGIRIMAN BARANG',[

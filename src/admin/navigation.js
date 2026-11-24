@@ -110,6 +110,7 @@ export class AdminNavigation {
       if (!option) return await this.show(ctx, ctx.state, 'Pilihan tidak valid. Gunakan pilihan pada polling.');
       return await this.select(ctx, option, event);
     } catch (error) {
+      if(message.pollOption && error.status!==409)throw error;
       if (error.status === 409) {
         const s = ctx.state;
         if (s?.pending?.kind === 'category') return this.show(ctx, s.back || { screen: 'categories' }, error.message);

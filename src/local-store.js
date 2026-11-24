@@ -96,7 +96,11 @@ export class LocalStore {
   retry(id) {
     const row = this.db.prepare('SELECT payload FROM outbox WHERE id=?').get(id);
     if (row && this.decrypt(row.payload).kind === 'delivery') return 0;
-    return this.db.prepare("UPDATE outbox SET status=CASE WHEN id LIKE 'broadcast:%' THEN 'broadcast' ELSE 'pending' END,wa_id=NULL WHERE id=? AND status='uncertain'").run(id).changes;
+    return this.transaction(()=>{
+      const result=this.db.prepare("UPDATE outbox SET status=CASE WHEN id LIKE 'broadcast:%' THEN 'broadcast' ELSE 'pending' END,wa_id=NULL WHERE id=? AND status='uncertain'").run(id).changes;
+      if(result && this.decrypt(row.payload).kind==='qris')this.db.prepare("UPDATE outbox SET status='pending',wa_id=NULL WHERE id=? AND status='retired'").run(id+':poll');
+      return result;
+    });
   }
   saveMessage(id, message) {
     this.db.prepare('INSERT OR REPLACE INTO retry_messages VALUES (?,?,?)').run(id, this.encrypt(message), Date.now());

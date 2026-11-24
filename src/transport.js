@@ -18,16 +18,18 @@ export class Transport {
     return socket.sendMessage(jid, content, { messageId });
   }
   async text(jid, text, id, context = null) {
-    if(context?.orderId && jid===this.config.adminJid && context.kind!=='menu')return this.orderNavigation(jid,text,context.orderId,id);
-    if(context?.orderId && context.role==='admin' && jid!==this.config.adminJid) {
-      const order=await this.api.order(context.orderId);
-      if(order.status==='refund_pending' && !order.refund_accepted)return this.polls.create(jid,{buyer:order.buyer,route:'command',orderId:order.id,question:text.replace(/\/setujui[^\n]*/g,'Pilih Setujui refund pada polling.'),options:[{label:'Setujui refund',command:'/setujui'},{label:'Hubungi admin',command:'/chat'}]});
+    if(context?.orderId && (jid===this.config.adminJid && context.kind!=='menu' || context.role==='admin')) {
+      this.store.enqueue(id,jid,{kind:'order_notice',text,context});return;
     }
     splitMessage(text).forEach((part, index) => this.store.enqueue(`${id}:part${index}`, jid, { kind: 'text', text: part, context }));
   }
-  async orderNavigation(jid,text,orderId,id = null) {
+  async orderNavigation(jid,text,orderId) {
     const order=await this.api.order(orderId);
-    if(['cancelled','completed','refunded'].includes(order.status))return this.text(jid,text,id || `order:${orderId}:${order.version}`);
+    if(['cancelled','completed','refunded'].includes(order.status))return this.send(jid,{text});
+    if(jid!==this.config.adminJid) {
+      if(order.status==='refund_pending' && !order.refund_accepted)return this.polls.create(jid,{buyer:order.buyer,route:'command',orderId:order.id,question:text.replace(/\/setujui[^\n]*/g,'Pilih Setujui refund pada polling.'),options:[{label:'Setujui refund',command:'/setujui'},{label:'Hubungi admin',command:'/chat'}]});
+      return this.send(jid,{text});
+    }
     const question=text.split('\n').filter(line=>!/^\s*(Reply|\/(setujui|tolakbukti|batal|selesaikan|selesai|refund|lanjutkan))/.test(line)).join('\n');
     return this.polls.create(jid,{buyer:this.config.adminJid,route:'order',orderId,status:order.status,question,options:orderActions(order)});
   }
@@ -45,7 +47,7 @@ export class Transport {
     const result = await this.send(jid, { image: buffer, caption });
     if (!result?.key?.id) throw new Error('Pengiriman gambar belum terkonfirmasi.');
     if (context) this.store.enqueue(`ref:${result.key.id}`, jid, { context }, 'mapping', result.key.id);
-    if(context?.orderId && jid===this.config.adminJid)await this.orderNavigation(jid,'BUKTI PEMBAYARAN\n'+caption,context.orderId);
+    if(context?.orderId && jid===this.config.adminJid)this.store.enqueue(`proof-notice:${result.key.id}`,jid,{kind:'order_notice',text:'BUKTI PEMBAYARAN\n'+caption,context});
     return result;
   }
   async drain() {
@@ -55,7 +57,7 @@ export class Transport {
       let job;
       while (this.socket && (job = this.store.next() || (Date.now() >= this.nextBroadcastAt ? this.store.next('broadcast') : null))) {
         if (job.status === 'broadcast') this.nextBroadcastAt = Date.now() + 5000;
-        if(job.payload.kind==='poll' && this.store.outboxStatus(job.payload.dependsOn)!=='sent'){this.store.setStatus(job.id,'retired');continue;}
+        if(job.payload.kind==='poll' && job.payload.dependsOn && this.store.outboxStatus(job.payload.dependsOn)!=='sent'){this.store.setStatus(job.id,'retired');continue;}
         let content;
         try {
           content = job.payload.kind === 'qris'
@@ -71,7 +73,7 @@ export class Transport {
               continue;
             }
           }
-          const sent = job.payload.kind==='poll' ? await this.polls.create(job.jid,job.payload.menu) : await this.send(job.jid, content, job.payload.waId);
+          const sent = job.payload.kind==='order_notice' ? await this.orderNavigation(job.jid,job.payload.text,job.payload.context.orderId) : job.payload.kind==='poll' ? await this.polls.create(job.jid,job.payload.menu) : await this.send(job.jid, content, job.payload.waId);
           if (!sent?.key?.id) throw new Error('No WA message id');
           if(job.payload.kind==='delivery' && sent.key.id!==job.payload.waId)throw new Error('Unexpected delivery message id');
           this.store.saveMessage(sent.key.id, sent.message);
