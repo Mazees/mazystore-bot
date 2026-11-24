@@ -7,7 +7,7 @@ export class PollTest {
     if(!Number.isInteger(length)||length<0||length>1000)throw Error('Gunakan /tespoll atau /tespoll 256 (maksimal 1000 karakter untuk uji).');
     const socket=this.transport.socket;
     if(!socket)throw Error('WhatsApp belum tersambung.');
-    const name=length ? 'Uji polling Mazy Store '.padEnd(length,'x').slice(0,length) : menu ? 'MAZY STORE | MENU — Pilih satu produk atau layanan' : 'MAZY STORE | Pilih satu opsi';
+    const name=length ? 'Uji polling Mazy Store '.padEnd(length,'x').slice(0,length) : menu ? menu.question || 'MAZY STORE | MENU — Pilih satu produk atau layanan' : 'MAZY STORE | Pilih satu opsi';
     const id=generateMessageIDV2(socket.user.id),secret=randomBytes(32),values=menu ? menu.options.map((o,i)=>`${i+1}. ${o.label.split('\n')[0]}`) : ['Pilihan pertama','Pilihan kedua'];
     if(values.length>12)throw Error('Polling mendukung maksimal 12 pilihan. Gunakan /menu untuk seluruh katalog.');
     const key={remoteJid:jid,fromMe:true,id};

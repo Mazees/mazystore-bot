@@ -37,6 +37,7 @@ export class BuyerNavigation {
     };
     const options = async (title, sections, state, entries) => {
       await save({ ...state, options: entries });
+      if(state.stage==='menu' && message.pollMenu) return message.pollMenu(renderMessage(title,[...sections,numbered(entries),'Pilih satu opsi pada polling di bawah.']),entries);
       return say(renderMessage(title, [...sections, numbered(entries), `*${state.stage === 'menu' ? 'CARA PILIH PRODUK' : 'PILIHAN'}*\nBalas angka *1 sampai ${entries.length}* untuk memilih.\n/chat - Hubungi admin`]));
     };
     const menu = async () => {

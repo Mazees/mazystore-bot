@@ -22,9 +22,7 @@ export class StoreBot {
 
   async handle(message) {
     if(message.text.trim().split(/\s+/)[0].toLowerCase()==='/tespoll' && message.text.trim()==='/tespoll') {
-      await this.buyer.handle({...message,text:'/menu'});
-      const c=await this.api.customer(message.buyer);
-      return this.polls.create(message.jid,0,{buyer:message.buyer,options:c.session.options,selfChat:message.selfChat});
+      return this.buyer.handle({...message,text:'/menu',pollMenu:(question,options)=>this.polls.create(message.jid,0,{buyer:message.buyer,options,selfChat:message.selfChat,question})});
     }
     if (message.buyer !== this.config.adminJid || message.selfChat) return this.buyer.handle(message);
     let owner;
