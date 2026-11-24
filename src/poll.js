@@ -16,6 +16,7 @@ export class NavigationPoll {
     try {
       const sent=await this.transport.send(jid,{poll:{name:menu.question,values,selectableCount:1,messageSecret:secret}},id);
       if(sent?.message)this.local.saveMessage(id,sent.message);
+      return sent;
     }catch(error){this.local.authSet('poll:'+id,null);throw error;}
   }
   async vote(message,content,buyer,socket,onChoose=null) {

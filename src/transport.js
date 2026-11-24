@@ -30,11 +30,14 @@ export class Transport {
     const question=text.split('\n').filter(line=>!/^\s*(Reply|\/(setujui|tolakbukti|batal|selesaikan|selesai|refund|lanjutkan))/.test(line)).join('\n');
     return this.polls.create(jid,{buyer:this.config.adminJid,route:'order',orderId,status:order.status,question,options:orderActions(order)});
   }
-  async payment(jid, order, id) {
+  async payment(jid, order, id, menu = null) {
     const { createHash } = await import('node:crypto');
     const version = createHash('sha256').update(this.config.qris).digest('hex');
     if (order.qris_version !== version) throw new Error('QRIS order berbeda dari konfigurasi sekarang. Hubungi admin.');
+    this.store.transaction(()=>{
     this.store.enqueue(id, jid, { kind: 'qris', total: order.total, caption: renderMessage('MAZY STORE · PEMBAYARAN', [`ID: ${order.id}\nMerchant: ${this.config.merchant}\nTotal: Rp${order.total.toLocaleString('id-ID')}`, 'Setelah membayar, pilih Sudah Bayar pada polling lalu kirim foto bukti pembayaran.', '/batal: batalkan pesanan']), context: null });
+      if(menu)this.store.enqueue(`${id}:poll`,jid,{kind:'poll',menu,dependsOn:id});
+    });
   }
   async image(jid, buffer, caption, context = null) {
     if (!this.socket) throw new Error('WhatsApp belum tersambung.');
@@ -51,6 +54,7 @@ export class Transport {
       let job;
       while (this.socket && (job = this.store.next() || (Date.now() >= this.nextBroadcastAt ? this.store.next('broadcast') : null))) {
         if (job.status === 'broadcast') this.nextBroadcastAt = Date.now() + 5000;
+        if(job.payload.kind==='poll' && this.store.outboxStatus(job.payload.dependsOn)!=='sent'){this.store.setStatus(job.id,'retired');continue;}
         let content;
         try {
           content = job.payload.kind === 'qris'
@@ -66,7 +70,7 @@ export class Transport {
               continue;
             }
           }
-          const sent = await this.send(job.jid, content, job.payload.waId);
+          const sent = job.payload.kind==='poll' ? await this.polls.create(job.jid,job.payload.menu) : await this.send(job.jid, content, job.payload.waId);
           if (!sent?.key?.id) throw new Error('No WA message id');
           if(job.payload.kind==='delivery' && sent.key.id!==job.payload.waId)throw new Error('Unexpected delivery message id');
           this.store.saveMessage(sent.key.id, sent.message);

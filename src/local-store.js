@@ -70,6 +70,7 @@ export class LocalStore {
     const row = this.db.prepare('SELECT * FROM outbox WHERE status=? ORDER BY created,rowid LIMIT 1').get(status);
     return row ? { ...row, payload: this.decrypt(row.payload) } : null;
   }
+  outboxStatus(id) { return this.db.prepare('SELECT status FROM outbox WHERE id=?').get(id)?.status; }
   setStatus(id, status, waId = null) {
     this.db.prepare('UPDATE outbox SET status=?,wa_id=COALESCE(?,wa_id) WHERE id=?').run(status, waId, id);
   }

@@ -31,11 +31,12 @@ export class BuyerNavigation {
     const info = (value, title = 'MAZY STORE · INFO') => say(renderMessage(title, [value]));
     const help = () => say(helpMessage(this.adminNumber));
     const commands=(question,entries,orderId=null)=>this.polls.create(message.jid,{buyer:c.buyer,route:'command',selfChat:message.selfChat,question,options:entries,orderId});
-    const paymentPoll=o=>commands(renderMessage('MAZY STORE · PEMBAYARAN',[orderText(o),'Setelah membayar, pilih Sudah Bayar lalu kirim bukti pembayaran.']),[{label:'Sudah Bayar',command:'/done'},{label:'Batalkan pesanan',command:'/batal'},{label:'Hubungi admin',command:'/chat'}],o.id);
+    const paymentMenu=o=>({buyer:c.buyer,route:'command',selfChat:message.selfChat,question:renderMessage('MAZY STORE · PEMBAYARAN',[orderText(o),'Setelah membayar, pilih Sudah Bayar lalu kirim bukti pembayaran.']),options:[{label:'Sudah Bayar',command:'/done'},{label:'Batalkan pesanan',command:'/batal'},{label:'Hubungi admin',command:'/chat'}],orderId:o.id});
+    const paymentPoll=o=>this.polls.create(message.jid,paymentMenu(o));
     const active = async () => {
       if (!c.order) return info('Tidak ada pesanan aktif. Ketik /menu untuk belanja atau /chat untuk menghubungi admin.');
+      if(c.order.status==='awaiting_payment')return this.transport.payment(c.buyer,c.order,`${event}:payment`,paymentMenu(c.order));
       await say(renderMessage('MAZY STORE · PESANAN', [orderText(c.order), c.order.status === 'awaiting_payment' ? 'Pilih Sudah Bayar pada polling pembayaran.' : c.order.status === 'awaiting_proof' ? 'Kirim foto bukti pembayaran.' : c.order.status === 'review' ? 'Bukti sedang diperiksa admin.' : c.order.status === 'refund_pending' ? c.order.refund_accepted ? 'Refund sudah kamu setujui. Tunggu admin mengembalikan uang.\n/chat - Hubungi admin' : 'Admin menawarkan refund. Uang belum dikembalikan.\n/setujui - Setujui refund agar admin mengembalikan uang\n/chat - Hubungi admin jika belum sepakat' : c.order.delivery_mode === 'auto' ? 'Barang dikirim otomatis oleh bot. Status otomatis Selesai setelah seluruh barang berhasil dikirim. /chat untuk bantuan.' : 'Penyerahan barang dilakukan melalui chat pribadi admin.', ['awaiting_payment','awaiting_proof','review'].includes(c.order.status) ? '/batal - Batalkan pesanan langsung' : '']));
-      if (c.order.status === 'awaiting_payment') {await this.transport.payment(c.buyer,c.order,`${event}:payment`);await paymentPoll(c.order);}
       if (c.order.status === 'processing' && c.order.delivery_mode !== 'auto') await say(await claimMessage(api, this.adminNumber, c.order));
       if(c.order.status!=='awaiting_payment')await commands('MAZY STORE | PESANAN\n'+orderText(c.order),[...(['awaiting_proof','review'].includes(c.order.status)?[{label:'Batalkan pesanan',command:'/batal'}]:[]),...(c.order.status==='refund_pending'&&!c.order.refund_accepted?[{label:'Setujui refund',command:'/setujui'}]:[]),{label:'Hubungi admin',command:'/chat'},{label:'Katalog utama',command:'/menu'}],c.order.id);
     };
@@ -135,9 +136,7 @@ export class BuyerNavigation {
       }
       if(Number(text)>available(v))return info(`Stok tersedia hanya ${available(v)}. Masukkan jumlah lebih kecil.`);
       const order = await api.createOrder({ key: event, buyer: c.buyer, variantId: v.id, quantity: Number(text), expectedPrice: state.price, expectedTerms: state.terms, expectedDeliveryMode: state.deliveryMode, qrisVersion: createHash('sha256').update(this.config.qris).digest('hex') });
-      await say(renderMessage('MAZY STORE · PESANAN', [orderText(order)]));
-      await this.transport.payment(c.buyer, order, `${event}:payment`);
-      await paymentPoll(order);
+      await this.transport.payment(c.buyer, order, `${event}:payment`,paymentMenu(order));
       await say(renderMessage('ORDER BARU', [orderText(order), 'Buyer belum diverifikasi membayar.\nReply pesan ini dengan /batal untuk membatalkan.']), this.config.adminJid, { ...context, orderId: order.id });
       await save({ stage: 'ordered' });
       return;
