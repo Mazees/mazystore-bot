@@ -54,7 +54,11 @@ async function processMessage(m, sock) {
     return;
   }
   if(content.pollUpdateMessage) {
-    try {await polls.vote(m,content,buyer,sock,(record,index)=>bot.pollChoice(record,index));}catch {logger.warn('Vote polling uji belum berhasil diproses.');}
+    try {await polls.vote(m,content,buyer,sock,(record,index)=>bot.pollChoice(record,index));}
+    catch {
+      logger.warn('Vote polling belum berhasil diproses.');
+      await transport.text(jid,'Pilihan belum berhasil diproses. Periksa status pesanan melalui /admin atau /pesanan sebelum mencoba kembali.',`${seenId}:poll-error`);
+    }
     local.markSeen(seenId);return;
   }
   let image;

@@ -13,7 +13,8 @@ export class NavigationPoll {
     if(shown.length===1)shown.push({label:'Tutup',dismiss:true});
     const id=generateMessageIDV2(socket.user.id),secret=randomBytes(32),values=shown.map((o,i)=>(i+1)+'. '+Array.from(o.label).slice(0,90).join(''));
     const key={remoteJid:jid,fromMe:true,id};
-    this.local.authSet('poll:'+id,{key,secret,values,shown,created:Date.now(),used:false,owner:menu.buyer,menu});
+    const creators=[socket.user?.id,socket.user?.lid].filter(Boolean).map(jidNormalizedUser);
+    this.local.authSet('poll:'+id,{key,secret,values,shown,created:Date.now(),used:false,owner:menu.buyer,menu,creators});
     try {
       const sent=await this.transport.send(jid,{poll:{name:menu.question,values,selectableCount:1,messageSecret:secret}},id);
       if(sent?.message)this.local.saveMessage(id,sent.message);
@@ -24,8 +25,18 @@ export class NavigationPoll {
     const update=content.pollUpdateMessage,id=update?.pollCreationMessageKey?.id;
     if(!id)return;
     const record=this.local.authGet(`poll:${id}`);
-    if(!record || record.used || (record.owner ? record.owner!==buyer : record.key.remoteJid!==message.key.remoteJid) || Date.now()-record.created>30*60000)return;
-    const creators=[socket.user?.id,socket.user?.lid].filter(Boolean).map(jidNormalizedUser);
+    const entry=buyer===this.transport.config?.adminJid ? '/admin → Pesanan & pembayaran' : '/menu atau /pesanan';
+    if(!record) {
+      await this.transport.text(buyer,`Data polling lama sudah tidak tersedia. Buka ${entry} untuk melanjutkan. Status pesanan tidak diubah.`,`poll:${message.key.id}:missing`);return;
+    }
+    if(record.owner && record.owner!==buyer)return;
+    if(record.used) {
+      await this.transport.text(buyer,`Pilihan polling ini sudah diproses. Buka ${entry} untuk melihat status terbaru.`,`poll:${message.key.id}:used`);return;
+    }
+    if(record.menu?.route!=='order' && Date.now()-record.created>30*60000) {
+      await this.transport.text(buyer,`Menu polling sudah kedaluwarsa. Buka ${entry} untuk melanjutkan.`,`poll:${message.key.id}:expired`);return;
+    }
+    const creators=[...new Set([...(record.creators || []),socket.user?.id,socket.user?.lid].filter(Boolean).map(jidNormalizedUser))];
     const voters=[message.key.remoteJid,message.key.remoteJidAlt,buyer].filter(Boolean).map(jidNormalizedUser);
     let vote;
     for(const pollCreatorJid of creators) {
@@ -51,7 +62,7 @@ export class NavigationPoll {
       await this.transport.text(record.key.remoteJid,'Pilihan belum berhasil dipastikan. Periksa status pesanan. Untuk mencoba lagi, hapus centang lalu pilih kembali opsi yang sama; jangan membuat pesanan baru.','poll:'+id+':retry');
       return;
     }
-    this.local.authSet('poll:'+id,{used:true,created:record.created});
+    this.local.authSet('poll:'+id,{used:true,created:Date.now(),owner:record.owner});
     try {await this.transport.send(record.key.remoteJid,{delete:record.key});}
     catch {await this.transport.text(record.key.remoteJid,'Pilihan diproses, tetapi pesan polling belum berhasil dihapus.','poll:'+id+':delete-failed');}
 
