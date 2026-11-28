@@ -26,7 +26,7 @@ export class AdminNavigation {
 
   async unavailable(message) {
     const counts = this.local.outboxSummary?.() || {};
-    return this.transport.text(message.jid, screen('Admin › Koneksi', `Worker/D1 belum dapat diakses.\nKode: API_NETWORK\nWhatsApp: ${this.runtime().whatsapp ? 'Terhubung' : 'Belum terhubung'}\nAntrean keluar: ${counts.pending || 0}\n\nPeriksa status pesanan sebelum mengulang tindakan. Coba /admin setelah koneksi pulih.`, { root: true }), `${message.jid}:${message.id}:admin:offline`);
+    return this.transport.text(message.jid, screen('Admin › Koneksi', `D1 belum dapat diakses.\nKode: API_NETWORK\nWhatsApp: ${this.runtime().whatsapp ? 'Terhubung' : 'Belum terhubung'}\nAntrean keluar: ${counts.pending || 0}\n\nPeriksa status pesanan sebelum mengulang tindakan. Coba /admin setelah koneksi pulih.`, { root: true }), `${message.jid}:${message.id}:admin:offline`);
   }
 
   async failure(message, error, state) {
@@ -36,9 +36,9 @@ export class AdminNavigation {
     if (code === 'API_NETWORK') return this.unavailable(message);
     const detail = code === 'ADMIN_INTERNAL'
       ? 'Terjadi error pada menu admin. Gangguan ini belum menunjukkan D1 bermasalah.'
-      : code === 'API_RESPONSE' ? 'Respons Worker tidak sesuai. Periksa WORKER_URL dan status Worker.'
-      : error.status === 401 || error.status === 403 ? 'Worker menolak akses. Periksa kesesuaian API_SECRET di panel dan Worker.'
-      : error.status >= 500 ? 'Worker melaporkan gangguan layanan. Periksa status pesanan sebelum mengulang.'
+      : code === 'API_RESPONSE' ? 'Respons D1 tidak sesuai. Periksa koneksi dan status Cloudflare.'
+      : error.status === 401 || error.status === 403 ? 'D1 menolak akses. Periksa CLOUDFLARE_API_TOKEN dan izin D1 pada akun terkait.'
+      : error.status >= 500 ? 'D1 melaporkan gangguan layanan. Periksa status pesanan sebelum mengulang.'
       : error.message;
     return this.transport.text(message.jid, renderMessage('ADMIN · PERMINTAAN GAGAL', [`Kode: ${code}${error.status ? `\nHTTP: ${error.status}` : ''}`, detail, 'Ketik /admin untuk membuka ulang menu. Periksa status pesanan sebelum mengulang tindakan.']), `${message.jid}:${message.id}:admin:failure`);
   }

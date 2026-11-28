@@ -1,18 +1,17 @@
-const encoder = new TextEncoder();
-const payload = (orderId, adminNumber) => encoder.encode(JSON.stringify([orderId, adminNumber]));
-const key = secret => crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign','verify']);
-const encode = bytes => btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/, '');
+import { claimDestination } from './contact.js';
 
-export async function claimLink(baseUrl, orderId, adminNumber, secret) {
-  if (!secret || secret.length < 32 || !/^[A-Za-z0-9-]{1,64}$/.test(orderId) || !/^[1-9]\d{7,14}$/.test(adminNumber)) throw new Error('Konfigurasi link CLAIM tidak valid.');
-  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', await key(secret), payload(orderId, adminNumber)));
-  return new URL(`/c/${orderId}/${adminNumber}/${encode(signature)}`, baseUrl).href;
-}
-
-export async function verifyClaimLink(orderId, adminNumber, signature, secret) {
-  if (!secret || secret.length < 32 || !/^[A-Za-z0-9_-]{43}$/.test(signature)) return false;
+export async function shortenClaim(adminNumber, order) {
+  if (order.status !== 'processing' || order.delivery_mode === 'auto') throw new Error('CLAIM hanya tersedia untuk order manual yang sedang diproses.');
+  const destination = claimDestination(adminNumber, order);
   try {
-    const bytes = Uint8Array.from(atob(signature.replaceAll('-','+').replaceAll('_','/')), char => char.charCodeAt(0));
-    return await crypto.subtle.verify('HMAC', await key(secret), bytes, payload(orderId, adminNumber));
-  } catch { return false; }
+    const query = new URLSearchParams({ format: 'json', url: destination, logstats: '0' });
+    const response = await fetch('https://is.gd/create.php?' + query, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error('Shortlink tidak tersedia.');
+    const body = await response.json();
+    const url = new URL(body.shorturl);
+    if (body.errorcode || url.protocol !== 'https:' || url.hostname !== 'is.gd' || url.port || url.username || url.password || !/^\/[A-Za-z0-9_-]+$/.test(url.pathname) || url.search || url.hash) throw new Error('Shortlink tidak valid.');
+    return url.href;
+  } catch {
+    return 'https://wa.me/' + adminNumber;
+  }
 }

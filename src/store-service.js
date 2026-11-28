@@ -1,6 +1,4 @@
-import { inventoryRoute } from './inventory.js';
-import { claimDestination } from '../src/contact.js';
-import { verifyClaimLink } from '../src/claim-link.js';
+import { inventoryRoute } from './store-inventory.js';
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -9,7 +7,6 @@ const fail = (status, message) => { throw new HttpError(status, message); };
 const text = (value, max = 2000) => typeof value === 'string' && value.length > 0 && value.length <= max;
 const isBuyer = value => text(value, 100) && /^\d+@(s\.whatsapp\.net|lid)$/.test(value);
 const hash = async value => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), b => b.toString(16).padStart(2, '0')).join('');
-const json = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const sql = (db, query, ...args) => db.prepare(query).bind(...args);
 
 async function customer(db, buyer) {
@@ -22,25 +19,17 @@ async function customer(db, buyer) {
 }
 
 async function bodyOf(request, limit = 16000) {
-  const raw = await request.text();
-  if (raw.length > limit) fail(413, 'Permintaan terlalu besar.');
-  let body;
-  try { body = JSON.parse(raw); } catch { fail(400, 'JSON tidak valid.'); }
+  const raw = JSON.stringify(request.body);
+  if (!raw || raw.length > limit) fail(413, 'Permintaan terlalu besar.');
+  const body = JSON.parse(raw);
   if (!body || typeof body !== 'object' || Array.isArray(body)) fail(400, 'Body harus berupa object JSON.');
   return body;
 }
 
-async function route(request, env) {
-  if (!env.API_SECRET || env.API_SECRET.length < 32) fail(503, 'API belum dikonfigurasi.');
-  const token = request.headers.get('Authorization') ?? '';
-  const a = await hash(token);
-  const b = await hash(`Bearer ${env.API_SECRET}`);
-  if (a !== b) fail(401, 'Tidak diizinkan.');
-  const url = new URL(request.url);
-  const path = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
-  const db = env.DB;
-  const method = request.method;
-  if (path[0] !== 'v1') fail(404, 'Endpoint tidak ditemukan.');
+export async function storeRequest(db, pathName, method, body) {
+  const url = new URL(pathName, 'https://store.local');
+  const path = ['v1', ...url.pathname.split('/').filter(Boolean).map(decodeURIComponent)];
+  const request = { url: url.href, method, body };
   const [, resource, id, sub] = path;
   if (['stock','deliveries'].includes(resource)) return inventoryRoute(request,db,path,bodyOf,hash);
   if (resource === 'admin' && method === 'GET') {
@@ -70,9 +59,9 @@ async function route(request, env) {
     }
   }
   if (resource === 'catalog' && method === 'GET') {
-    const [categories, variants] = await Promise.all([
-      db.prepare('SELECT * FROM categories WHERE deleted=0 ORDER BY id').all(),
-      db.prepare(`SELECT v.*,(SELECT COUNT(*) FROM inventory WHERE variant_id=v.id AND state='available') AS stock_available,(SELECT COUNT(*) FROM inventory WHERE variant_id=v.id AND state='reserved') AS stock_reserved,(SELECT COUNT(*) FROM inventory WHERE variant_id=v.id AND state='sold') AS stock_sold FROM variants v JOIN categories c ON c.id=v.category_id WHERE c.deleted=0 AND v.archived=0 ORDER BY v.category_id,v.id`).all(),
+    const [categories, variants] = await db.batch([
+      db.prepare('SELECT * FROM categories WHERE deleted=0 ORDER BY id'),
+      db.prepare(`SELECT v.*,(SELECT COUNT(*) FROM inventory WHERE variant_id=v.id AND state='available') AS stock_available,(SELECT COUNT(*) FROM inventory WHERE variant_id=v.id AND state='reserved') AS stock_reserved,(SELECT COUNT(*) FROM inventory WHERE variant_id=v.id AND state='sold') AS stock_sold FROM variants v JOIN categories c ON c.id=v.category_id WHERE c.deleted=0 AND v.archived=0 ORDER BY v.category_id,v.id`),
     ]);
     return { categories: categories.results, variants: variants.results };
   }
@@ -269,25 +258,3 @@ async function route(request, env) {
   }
   fail(404, 'Endpoint tidak ditemukan.');
 }
-
-export default {
-  async fetch(request, env) {
-    try {
-      const path = new URL(request.url).pathname;
-      if (path.startsWith('/c/')) {
-        if (!['GET','HEAD'].includes(request.method)) return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD', 'Cache-Control': 'no-store' } });
-        const match = path.match(/^\/c\/([A-Za-z0-9-]{1,64})\/([1-9]\d{7,14})\/([A-Za-z0-9_-]{43})$/);
-        if (!match || !await verifyClaimLink(match[1], match[2], match[3], env.API_SECRET)) fail(404, 'Link tidak ditemukan.');
-        const order = await sql(env.DB, 'SELECT * FROM orders WHERE id=?', match[1]).first();
-        if (!order) fail(404, 'Link tidak ditemukan.');
-        if (order.status !== 'processing' || order.delivery_mode === 'auto') fail(410, 'Link CLAIM sudah tidak aktif. Hubungi admin melalui /chat di bot.');
-        return new Response(null, { status: 302, headers: { Location: claimDestination(match[2], order), 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow' } });
-      }
-      return json(await route(request, env));
-    }
-    catch (error) {
-      if(/STOCK_ALLOCATED|AUTO_ORDER_ACTIVE|STOCK_VARIANT_UNAVAILABLE|STOCK_UNAVAILABLE/.test(String(error)))return json({error:'Stok atau order berubah. Periksa data terbaru; perubahan tidak dijalankan.'},409);
-      return json({ error: error.status ? error.message : 'Layanan database bermasalah. Coba lagi.' }, error.status || 503);
-    }
-  },
-};

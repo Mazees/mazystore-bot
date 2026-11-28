@@ -6,11 +6,11 @@ import { Testimonials } from './testimonials.js';
 export class AutoDelivery {
   constructor(api, transport, local, config) {
     this.api=api;this.transport=transport;this.local=local;this.config=config;
-    this.running=false;this.testimonials=new Testimonials(local,transport);
+    this.running=false;this.requested=false;this.testimonials=new Testimonials(local,transport);
   }
   async tick() {
     if(this.running || !this.transport.socket || this.transport.draining)return;
-    this.running=true;
+    this.running=true;this.requested=false;
     try {
       const {orders}=await this.api.deliveryOrders();
       for(const order of orders) {

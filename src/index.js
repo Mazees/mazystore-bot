@@ -20,13 +20,15 @@ const logger = pino({ level: config.logLevel, redact: ['*.creds', '*.keys', '*.m
 const waLogger = pino({ level: 'silent' });
 const local = new LocalStore(config.dataDir, config.dataKey, BufferJSON);
 local.retireLegacyRelay();
-const api = new StoreApi(config.workerUrl, config.apiSecret);
+const api = new StoreApi(config);
 const auth = sqliteAuth(local);
 const transport = new Transport(local, api, config);
 const status = { whatsapp: false, database: false, stopping: false };
 const bot = new StoreBot(api, transport, config, local, () => ({ ...status }), details => logger.error(details, 'Permintaan admin gagal'));
 const polls = new NavigationPoll(local,transport);
 const delivery = new AutoDelivery(api,transport,local,config);
+const runDelivery = () => status.stopping ? Promise.resolve() : delivery.tick().catch(() => logger.warn('Penyerahan otomatis belum dapat diperiksa.'));
+api.onDelivery = () => { delivery.requested = true; void runDelivery(); };
 let socket;
 let reconnect;
 let attempts = 0;
@@ -126,6 +128,8 @@ function connect() {
         attempts = 0;
         transport.attach(sock);
         logger.info('WhatsApp tersambung');
+        delivery.requested = true;
+        void runDelivery();
         await transport.text(config.adminJid, `Bot Mazy Store aktif. Ketik /admin untuk membuka menu pengelolaan.\n${local.uncertain().length ? 'Ada pengiriman yang perlu diperiksa melalui Status bot & pengiriman.' : ''}`, `startup:${Date.now()}`);
         void transport.drain().catch(() => logger.warn('Antrean pengiriman belum selesai.'));
       }
@@ -156,20 +160,20 @@ function connect() {
 }
 
 async function probe() {
-  try { await api.catalog(); status.database = true; } catch { status.database = false; }
+  try { await api.health(); status.database = true; } catch { status.database = false; }
 }
 const drainTimer = setInterval(() => {
-  void delivery.tick().then(()=>transport.drain()).then(()=>delivery.tick()).catch(()=>logger.warn('Penyerahan otomatis belum dapat diperiksa.'));
-  void transport.drain().catch(()=>logger.warn('Antrean pengiriman bermasalah.'));
+  void transport.drain().then(() => delivery.requested ? runDelivery() : undefined).catch(() => logger.warn('Antrean pengiriman bermasalah.'));
 }, 2000);
-const probeTimer = setInterval(() => { void probe(); }, 30000);
+const deliveryTimer = setInterval(() => { void runDelivery(); }, 60000);
+const probeTimer = setInterval(() => { void probe(); }, 300000);
 const cleanTimer = setInterval(() => local.cleanup(), 60000);
 async function shutdown(code = 0) {
   if (closing) return;
   closing = true;
   status.stopping = true;
   clearTimeout(reconnect);
-  clearInterval(drainTimer); clearInterval(probeTimer); clearInterval(cleanTimer);
+  clearInterval(drainTimer); clearInterval(deliveryTimer); clearInterval(probeTimer); clearInterval(cleanTimer);
   server.close();
   const force = setTimeout(() => process.exit(code), 10000);
   force.unref();

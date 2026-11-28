@@ -9,14 +9,11 @@
   "scripts": {
     "start": "node --env-file=.env src/index.js",
     "check": "node scripts/check.js",
-    "worker:dev": "wrangler dev --config worker/wrangler.local.jsonc",
-    "worker:deploy": "wrangler deploy --config worker/wrangler.local.jsonc",
     "db:local": "wrangler d1 migrations apply mazy-store --local --config worker/wrangler.local.jsonc",
     "db:remote": "wrangler d1 migrations apply mazy-store --remote --config worker/wrangler.local.jsonc",
     "qris:import": "node scripts/import-qris.js",
     "setup": "node scripts/setup.js",
-    "backup": "node --env-file=.env scripts/backup.js",
-    "worker:secret": "node --env-file=.env scripts/worker-secret.js"
+    "backup": "node --env-file=.env scripts/backup.js"
   },
   "dependencies": {
     "baileys": "7.0.0-rc14",

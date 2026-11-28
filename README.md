@@ -1,13 +1,13 @@
 # Mazy Store
 
-Bot WhatsApp untuk reseller produk AI: Node.js 26 LTS, Express 5, Baileys, Cloudflare Worker + D1, dan SQLite lokal untuk sesi WA. Semua kode aplikasi menggunakan JavaScript ES Modules.
+Bot WhatsApp untuk reseller produk AI: Node.js 26 LTS, Express 5, Baileys, Cloudflare D1 REST API, dan SQLite lokal untuk sesi WA. Semua kode aplikasi menggunakan JavaScript ES Modules.
 
 Alur buyer: **pilih produk → varian → kuantitas → bayar QR sesuai nominal → `/done` → kirim foto bukti → admin menyetujui → CLAIM langsung ke WA admin → barang diserahkan → admin menandai Selesai**.
 
 ## Pembagian aplikasi
 
 - `src/`: bot dan Express di hosting panel. Express menyediakan `GET /healthz` dan `GET /readyz`; tidak mengekspos file, QR pairing, atau kontrol admin melalui HTTP.
-- `worker/`: API terautentikasi untuk D1. Bot mengaksesnya melalui HTTPS menggunakan secret bersama.
+- `worker/`: riwayat migrasi D1 dan template konfigurasi Wrangler untuk administrasi database. Bot mengakses D1 REST langsung; logika toko berada di layanan lokal Node.js.
 - `config/qris.txt`: payload QRIS dasar dari gambar merchant yang diberikan, sudah diperiksa checksum dan identitasnya. Bukan QRIS merchant dari kode contoh SmartPOS.
 - `data/`: SQLite terenkripsi per nilai untuk auth, antrean teks sementara, dan retry. Folder ini harus persisten dan tidak boleh dibagikan.
 
@@ -26,11 +26,13 @@ Edit `.env`:
 
 ```dotenv
 ADMIN_NUMBER=6281234567890
-WORKER_URL=https://mazy-store-api.SUBDOMAIN.workers.dev
+CLOUDFLARE_ACCOUNT_ID=isi-account-id-cloudflare
+CLOUDFLARE_DATABASE_ID=isi-uuid-d1-yang-sekarang
+CLOUDFLARE_API_TOKEN=isi-token-d1
 PORT=8906
 ```
 
-`ADMIN_NUMBER` adalah nomor WA pribadi admin, **berbeda dari nomor bot**, tanpa `+` atau spasi. `PORT` harus mengikuti allocation panel hosting. `API_SECRET` dan `DATA_KEY` dibuat acak oleh setup; jangan dibagikan atau diganti tanpa merencanakan pemulihan sesi. `.env` tidak ditimpa jika sudah ada. Nomor contoh wajib diganti.
+`ADMIN_NUMBER` adalah nomor WA pribadi admin, **berbeda dari nomor bot**, tanpa `+` atau spasi. `PORT` harus mengikuti allocation panel hosting. `DATA_KEY` dibuat acak oleh setup untuk instalasi baru. Pada instalasi lama, pertahankan DATA_KEY yang sama agar sesi dan stok tetap terbaca. Token Cloudflare diisi sendiri dan tidak boleh dibagikan. `.env` tidak ditimpa jika sudah ada. Nomor contoh wajib diganti.
 
 `QRIS_PAYLOAD_FILE=./config/qris.txt` sudah menunjuk QRIS toko. Untuk QRIS lain:
 
@@ -40,28 +42,24 @@ npm run qris:import -- gambar-qris.jpg config/qris-baru.txt
 
 Ubah lokasi payload di `.env`. `QRIS_PAYLOAD`, jika diisi, lebih diprioritaskan daripada file. `EXPECTED_MERCHANT` harus cocok dengan nama merchant. Bot menolak QR rusak, merchant tidak sesuai, serta payload dengan biaya/tip tambahan. Simpan konfigurasi QRIS yang sama selama masih ada order menunggu pembayaran; pengiriman ulang order dengan versi QRIS berbeda ditolak.
 
-## 2. Buat D1 dan deploy Worker
+## 2. Hubungkan D1 langsung
 
-Lakukan dari komputer pengembangan yang mempunyai browser untuk login Cloudflare. Tidak memerlukan R2 atau kartu kredit untuk konfigurasi ini.
+Gunakan database D1 yang sudah ada. Salin Account ID dari dashboard Cloudflare dan Database ID dari halaman D1 atau konfigurasi Wrangler lokal. Buat API Token khusus dengan izin **D1 Read dan D1 Write** pada akun terkait, lalu isi tiga variabel CLOUDFLARE di .env panel. Jangan memakai Global API Key. Token dikirim hanya ke API resmi Cloudflare, tidak ke WhatsApp atau is.gd.
+
+Bot tidak membutuhkan WORKER_URL atau API_SECRET lagi. Nilai lama boleh tetap berada di .env untuk rollback. Tidak perlu menjalankan setup ulang, seed ulang, migrasi baru, atau deploy Worker untuk refactor ini.
+
+Untuk instalasi D1 baru saja, jalankan dari laptop:
 
 ```sh
 npx wrangler login
 npx wrangler d1 create mazy-store
 ```
 
-Salin `database_id` ke `worker/wrangler.local.jsonc`, lalu:
+Isi database_id di worker/wrangler.local.jsonc, kemudian jalankan npm run db:remote. Setup membuat konfigurasi lokal tanpa menimpa file yang sudah ada; file tersebut diabaikan Git. Riwayat migrasi sampai 0007 tetap dipertahankan. npm run db:local tersedia untuk database pengembangan; runtime bot selalu menggunakan D1 REST sesuai tiga variabel CLOUDFLARE.
 
-```sh
-npm run db:remote
-npm run worker:deploy
-npm run worker:secret
-```
+Validasi, penghitungan harga, hak tindakan, dan transaksi dijalankan oleh layanan lokal bot. SQL memakai parameter terikat. Perubahan status dan log tindakan dikirim melalui batch atomik; unique index tetap membatasi satu order aktif per buyer.
 
-Perintah terakhir mengirim `API_SECRET` dari `.env` ke secret Worker tanpa mencetaknya. Isi `WORKER_URL` dengan URL hasil deploy. Worker akan menolak request sampai secret diatur. Semua request bisnis memakai `Authorization: Bearer <API_SECRET>`. Jangan menaruh secret ini di pesan buyer atau kode publik.
-
-Endpoint Worker berada di `/v1`: katalog, pengelolaan varian, customer/session, order/action, referensi pesan, serta percakapan. Tidak ada endpoint SQL bebas. Nominal dihitung di Worker; buyer tidak menentukan harga. Perubahan status dan log tindakan dilakukan dalam batch atomik. Satu order aktif per buyer ditegakkan dengan unique index.
-
-Untuk development lokal, ganti `database_id` terlebih dahulu, jalankan `npm run db:local`, isi secret di `worker/.dev.vars`, kemudian `npm run worker:dev`. Arahkan `WORKER_URL` bot ke alamat lokal Wrangler. Jangan gunakan URL localhost pada hosting produksi.
+D1 REST menghindari kuota request Worker, tetapi tetap mengikuti kuota D1 dan batas global Cloudflare API. Pemeriksaan delivery berjalan saat diperlukan, saat WA tersambung, dan setiap 60 detik untuk pemulihan. Antrean SQLite diperiksa setiap dua detik tanpa query delivery rutin. Probe D1 menggunakan SELECT 1 setiap lima menit; endpoint kesehatan membaca status terakhir. Respons 429 menghormati Retry-After; pembacaan dan mutasi dengan kunci idempotensi yang didukung mencoba ulang maksimal sekali. Mutasi tanpa jaminan idempotensi tidak diulang otomatis.
 
 ## 3. Jalankan di panel
 
@@ -86,7 +84,7 @@ Pastikan `/home/container`/folder project tetap tersimpan setelah restart. Panel
 
 ### Tampilan bersama buyer dan admin
 
-Menu buyer/admin, detail order, pembayaran, CLAIM, dan caption foto mengikuti gaya Mazy Store: header dekoratif pendek, judul tebal, pemisah bagian, serta pilihan bernomor 01, 02, dan seterusnya. Pilihan produk memakai blok terbuka ┌ / │ / └; rincian dan petunjuk memakai teks regular. Tidak memakai monospace atau pemotongan lebar kolom. Input 1 maupun 01 memilih item yang sama. Harga, jumlah katalog dan label pilihan tetap berasal dari database. WhatsApp membungkus teks sesuai layar; ID dan link tetap utuh.
+Menu buyer/admin, detail order, pembayaran, CLAIM, dan caption foto mengikuti gaya Mazy Store: header dekoratif pendek, judul tebal, pemisah bagian, serta pilihan bernomor 01, 02, dan seterusnya. Pilihan produk memakai blok terbuka ┌ / │ / └; rincian dan petunjuk memakai teks regular. Tidak memakai monospace atau pemotongan lebar kolom. Harga, jumlah katalog dan label pilihan tetap berasal dari database. WhatsApp membungkus teks sesuai layar; ID dan link tetap utuh.
 
 Semua pilihan navigasi menggunakan polling satu jawaban, termasuk Kembali dan Beranda. Angka yang diketik hanya untuk data seperti harga dan kuantitas; tidak memilih menu. `/admin` dan `/menu` tetap menjadi pintu masuk.
 
@@ -104,7 +102,7 @@ Jumlah varian hanya ditampilkan pada menu admin di samping kategori, misalnya `C
 
 Jumlah 1–100 per order (bisa diturunkan melalui `MAX_QUANTITY`). Satu buyer satu order aktif; tidak ada kedaluwarsa otomatis. Harga dan deskripsi disalin ke order. Setelah buyer mengisi kuantitas, order dan QR pembayaran langsung dibuat. Jika harga/deskripsi berubah dari yang terakhir ditampilkan, buyer mendapat rincian terbaru dan diminta mengisi ulang jumlah.
 
-Setelah admin memeriksa uang masuk dan menyetujui pembayaran, status menjadi **Diproses** dan buyer menerima link pendek Worker pada bagian atas pesan. Saat diklik, Worker mengarahkan ke `wa.me` menuju `ADMIN_NUMBER` dengan pesan lengkap berikut:
+Setelah admin memeriksa uang masuk dan menyetujui pembayaran, status menjadi **Diproses** dan buyer menerima shortlink is.gd pada bagian atas pesan. Saat diklik, is.gd mengarahkan ke `wa.me` menuju `ADMIN_NUMBER` dengan pesan lengkap berikut:
 
 ```text
 ┏━━━━━━━━━━━━━━━━━━━┓
@@ -121,7 +119,7 @@ Total: Rp35.000
 ────────────────────
 ```
 
-Shortlink dibuat langsung di bot menggunakan HMAC-SHA256 dari API_SECRET, ID order, dan nomor admin. Tidak ada tabel shortlink, penyimpanan URL baru, layanan pemendek eksternal, atau migrasi D1. Route publik /c/... memverifikasi tanda tangan, membaca snapshot order yang sudah ada, lalu melakukan redirect 302; link hanya aktif selama status Diproses. Mengubah ID order atau nomor admin membuat tanda tangan tidak valid. Respons tidak di-cache dan tidak mengonsumsi link. Rotasi API_SECRET membatalkan link lama; /pesanan menghasilkan link baru. Deploy Worker sebelum memperbarui bot panel.
+Shortlink dibuat melalui API is.gd dari URL wa.me lengkap, tanpa statistik, dengan timeout 10 detik. Mapping tidak disimpan oleh bot di D1 atau SQLite; is.gd menyimpan URL tujuan yang berisi rincian CLAIM. /pesanan meminta shortlink kembali. Batas layanan adalah 200 pembuatan link per jam per IP, yang mungkin berbagi dengan pengguna hosting lain. Jika layanan gagal, bot tetap mengirim pembayaran disetujui, link kontak admin singkat, dan ID order untuk dikirim secara manual. Shortlink yang sudah terbit tetap bisa dibuka setelah order selesai. Order Otomatis tidak memakai CLAIM. Link Worker lama hanya tetap berfungsi selama deployment Worker lama dan secret lamanya dipertahankan; bot baru tidak memanggil Worker.
 
 Link CLAIM tidak diberikan untuk order belum dibayar atau masih menunggu verifikasi. `/pesanan` dapat mengirim ulang link selama Diproses. Penyerahan barang, OTP, kredensial, dan bantuan dilakukan **langsung di chat pribadi buyer dengan admin**, bukan melalui bot. Setelah seluruh barang diserahkan, admin menandai pesanan Selesai di submenu order. Status Diproses tetap menahan pembelian baru sampai selesai atau refund ditutup.
 
@@ -152,7 +150,7 @@ Autotesti memakai pengiriman gambar dan caption secara langsung, tanpa antrean d
 
 Menu navigasi biasa kedaluwarsa setelah 30 menit. Polling notifikasi tindakan order yang belum dipakai tetap disimpan melintasi restart dan selalu membaca ulang status order sebelum bertindak. Daftar panjang memakai halaman polling berisi 10 item. Input nama, harga, alasan, dan stok tetap diketik; Kembali dan Beranda tersedia melalui polling. Tindakan berjalan tanpa layar konfirmasi tambahan.
 
-Jika terjadi error, `ADMIN_INTERNAL` berarti kegagalan kode menu, `API_NETWORK` berarti koneksi/timeout Worker, `API_RESPONSE` berarti respons tidak sesuai (misalnya URL salah), dan `API_HTTP` menampilkan status penolakan/gangguan Worker. Console mencatat kode, jenis error, layar, dan lokasi source tanpa isi pesan atau secret. Periksa status order sebelum mengulangi tindakan. Request baca serta pembuatan/tindakan order dengan kunci idempotensi mencoba ulang satu kali saat gangguan koneksi/5xx; perubahan katalog tidak diulang otomatis.
+Jika terjadi error, `ADMIN_INTERNAL` berarti kegagalan kode menu, `API_NETWORK` berarti koneksi/timeout D1, `API_RESPONSE` berarti respons tidak sesuai (misalnya URL salah), dan `API_HTTP` menampilkan status penolakan/gangguan D1. Console mencatat kode, jenis error, layar, dan lokasi source tanpa isi pesan atau secret. Periksa status order sebelum mengulangi tindakan. Request baca serta pembuatan/tindakan order dengan kunci idempotensi mencoba ulang satu kali saat gangguan koneksi/5xx; perubahan katalog tidak diulang otomatis.
 
 Shortcut admin: **reply notifikasi order, pemberitahuan /done, foto bukti, atau hasil tindakan order** dengan perintah berikut. ID diambil dari referensi pesan, tidak dari teks/nomor menu. Shortcut tidak mengubah posisi submenu atau draft admin.
 
@@ -183,18 +181,16 @@ Status varian adalah **Ready / Kosong**. Varian baru selalu Kosong. Lengkapi Des
 
 ### Memperbarui instalasi yang sudah berjalan
 
-Untuk pengelolaan katalog, terapkan migrasi sampai `0005_permanent_variant_delete.sql` lalu deploy Worker **sebelum** memperbarui bot panel. Jalankan dari laptop yang sudah login Cloudflare:
+Refactor ini tidak mengubah struktur D1. Sebelum pindah, backup D1 dan data lokal memakai petunjuk di bawah, serta simpan .env dan DATA_KEY secara privat. Di panel:
 
-```sh
-npm run db:remote
-npm run worker:deploy
-```
+1. Hentikan proses bot lama agar sesi tidak digunakan dua instance.
+2. Ambil kode terbaru dengan git pull, lalu jalankan npm ci --omit=dev.
+3. Tambahkan CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_DATABASE_ID, dan CLOUDFLARE_API_TOKEN ke .env. Pertahankan ADMIN_NUMBER, DATA_KEY, QRIS, DATA_DIR, dan konfigurasi panel yang sudah ada.
+4. Jalankan npm start menggunakan Node.js 26. Periksa /readyz, /admin, katalog buyer, CLAIM, dan pengiriman otomatis.
 
-Migrasi mempertahankan katalog, varian, ID, dan transaksi lama; tidak menjalankan ulang seed katalog. Jangan mengganti secret, menjalankan setup ulang, atau menghapus sesi WA. Pembuatan katalog memakai kunci permintaan agar percobaan ulang tidak menambahkan katalog ganda.
+Jangan menjalankan setup ulang atau menghapus sesi WA. Database, ID order, polling lama, referensi pesan dan stok tetap digunakan. worker/wrangler.local.jsonc tidak ditimpa. Pertahankan deployment Worker lama sementara untuk link CLAIM yang telah dikirim; tidak perlu deploy Worker baru.
 
-Setelah perubahan source di-commit/push, ambil kode di panel dengan `git pull`, hentikan proses bot lama, lalu jalankan ulang memakai **Node.js 26**. Periksa `/admin` dari WA admin dan `/menu` dari sisi buyer. Kode bot panel tidak diperbarui otomatis oleh deploy Worker.
-
-Saat startup pertama versi ini, antrean relay lama dinonaktifkan dan cache retry pesan lama dibersihkan. Auth WA, order, serta referensi pesan dipertahankan. Konfigurasi `worker/wrangler.local.jsonc` tetap lokal/diabaikan Git; `worker/wrangler.jsonc` tetap template tanpa ID database.
+Jika perlu rollback, hentikan versi baru lalu gunakan commit bot sebelumnya beserta .env lama. Tidak perlu restore D1 hanya untuk rollback kode karena skema tidak berubah. Jangan mengganti DATA_KEY atau menjalankan dua versi sekaligus.
 
 ## 5. Pemulihan dan backup
 
@@ -243,7 +239,7 @@ Sesudah admin `/setujui` pembayaran, bot mengirim satu pesan barang per unit sto
 
 Restart tidak mengalokasikan ulang atau mengulang kiriman yang mungkin sudah sampai. Hasil kiriman meragukan diberitahukan ke admin dan tidak dapat diulang dari menu antrean umum. Periksa chat buyer; admin dapat `/selesai` sesudah memastikan penyerahan. Refund tetap membutuhkan persetujuan buyer dan menghentikan bagian yang belum mulai dikirim. Setelah refund selesai, stok kembali tersedia hanya jika seluruh pengiriman belum pernah dimulai; barang yang mungkin terkirim tidak dijual ulang otomatis.
 
-Migrasi `0007_inventory.sql` menambah stok, alokasi, mode snapshot order, dan catatan pengiriman. Isi stok dienkripsi oleh bot menggunakan **DATA_KEY yang sama** sebelum disimpan di D1. Cadangkan DATA_KEY secara terpisah bersama backup D1; kehilangan/mengganti kunci membuat stok lama tidak dapat dibaca. Tidak ada `.env`, dependency, atau layanan tambahan. Deploy: `npm run db:remote`, `npm run worker:deploy`, lalu perbarui/restart bot panel.
+Migrasi `0007_inventory.sql` menambah stok, alokasi, mode snapshot order, dan catatan pengiriman. Isi stok dienkripsi oleh bot menggunakan **DATA_KEY yang sama** sebelum disimpan di D1. Cadangkan DATA_KEY secara terpisah bersama backup D1; kehilangan/mengganti kunci membuat stok lama tidak dapat dibaca. Untuk instalasi yang belum memiliki migrasi 0007, jalankan `npm run db:remote` dari laptop sebelum memperbarui bot panel. Tidak perlu deploy Worker. Instalasi yang sudah memakai gudang tidak perlu migrasi ulang.
 
 ## Navigasi polling
 
